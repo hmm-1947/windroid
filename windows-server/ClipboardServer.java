@@ -128,7 +128,7 @@ public class ClipboardServer {
 
                         if (WindowsServer.batteryLabel != null)
                             WindowsServer.batteryLabel.setText(
-                                    "Battery: " + b + "%" + (c ? " Not Charging" : " Charging"));
+                                    "Battery: " + b + "%" + (c ? " Charging" : " Not Charging"));
 
                         if (WindowsServer.modeLabel != null)
                             WindowsServer.modeLabel.setText(
