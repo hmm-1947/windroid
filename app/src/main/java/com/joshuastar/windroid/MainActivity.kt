@@ -180,6 +180,39 @@ class MainActivity : ComponentActivity() {
 
         layout.addView(mouseBtn)
 
+        val lockBtn = Button(this).apply {
+            text = "Lock PC"
+            setOnClickListener {
+                ConnectionManager.send("CMD:LOCK_PC")
+                Toast.makeText(this@MainActivity, "Locking PC...", Toast.LENGTH_SHORT).show()
+            }
+        }
+        layout.addView(lockBtn)
+
+        val signOutBtn = Button(this).apply {
+            text = "Sign Out PC"
+            setOnClickListener {
+                AlertDialog.Builder(this@MainActivity)
+                    .setTitle("Sign Out")
+                    .setMessage("This will close all apps and sign out. Continue?")
+                    .setPositiveButton("Sign Out") { _, _ ->
+                        ConnectionManager.send("CMD:SIGNOUT_PC")
+                        Toast.makeText(this@MainActivity, "Signing out PC...", Toast.LENGTH_SHORT).show()
+                    }
+                    .setNegativeButton("Cancel", null)
+                    .show()
+            }
+        }
+        layout.addView(signOutBtn)
+
+        val controllerBtn = Button(this).apply {
+            text = "Game Controller"
+            setOnClickListener {
+                startActivity(Intent(this@MainActivity, GameControllerActivity::class.java))
+            }
+        }
+        layout.addView(controllerBtn)
+
         setContentView(layout)
     }
     private fun startScreenMirror() {

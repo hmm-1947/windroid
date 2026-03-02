@@ -1,7 +1,11 @@
 import java.io.*;
 import java.net.*;
-
+import java.awt.Toolkit;
+import java.awt.datatransfer.StringSelection;
 import javax.swing.SwingUtilities;
+import java.awt.datatransfer.Transferable;
+import java.awt.datatransfer.DataFlavor;
+import java.awt.event.KeyEvent;
 
 public class ClipboardServer {
 
@@ -26,6 +30,7 @@ public class ClipboardServer {
     }
 
     public static void start(int port) {
+        startClipboardMonitor();
         new Thread(() -> {
             try (ServerSocket serverSocket = new ServerSocket(port)) {
                 serverSocket.setReuseAddress(true);
@@ -38,6 +43,38 @@ public class ClipboardServer {
                 System.err.println("Port already in use!");
             } catch (Exception e) {
                 e.printStackTrace();
+            }
+        }).start();
+    }
+
+    private static volatile boolean ignoreNextClipboard = false;
+
+    public static void startClipboardMonitor() {
+        new Thread(() -> {
+            String lastText = "";
+            while (true) {
+                try {
+                    Thread.sleep(500);
+
+                    if (ignoreNextClipboard) {
+                        ignoreNextClipboard = false;
+                        continue;
+                    }
+
+                    Transferable contents = Toolkit.getDefaultToolkit()
+                            .getSystemClipboard().getContents(null);
+
+                    if (contents != null && contents.isDataFlavorSupported(DataFlavor.stringFlavor)) {
+                        String text = (String) contents.getTransferData(DataFlavor.stringFlavor);
+                        if (!text.equals(lastText)) {
+                            lastText = text;
+                            System.out.println("Clipboard changed, sending to Android: "
+                                    + text.substring(0, Math.min(30, text.length())));
+                            sendToAndroid("CLIPBOARD=" + text);
+                        }
+                    }
+                } catch (Exception ignored) {
+                }
             }
         }).start();
     }
@@ -67,6 +104,7 @@ public class ClipboardServer {
 
             WindowsServer.onPhoneConnected(incomingIp, phoneName, fingerprint);
             androidWriter = new PrintWriter(client.getOutputStream(), true);
+            MediaBridgeManager.start();
             System.out.println("Android persistent connection established from: " + incomingIp);
             String line;
             while ((line = in.readLine()) != null) {
@@ -74,12 +112,13 @@ public class ClipboardServer {
                 System.out.println("Received line: " + line);
 
                 if (line.startsWith("CLIPBOARD=")) {
-
                     if (clipboardEnabled) {
                         String text = line.substring("CLIPBOARD=".length());
-                        System.out.println("Clipboard: " + text);
+                        ignoreNextClipboard = true; // ← add this
+                        StringSelection selection = new StringSelection(text);
+                        Toolkit.getDefaultToolkit().getSystemClipboard().setContents(selection, null);
+                        System.out.println("Clipboard set on PC: " + text);
                     }
-
                 } else if (line.startsWith("NOTIF|")) {
 
                     NotificationServer.handle(line);
@@ -162,13 +201,88 @@ public class ClipboardServer {
                     int amount = Integer.parseInt(line.substring("MOUSE_SCROLL:".length()));
                     MouseController.scroll(amount);
 
-                }
+                } else if (line.equals("CMD:LOCK_PC")) {
+
+                    try {
+                        Runtime.getRuntime().exec(new String[] {
+                                "rundll32.exe", "user32.dll,LockWorkStation"
+                        });
+                        System.out.println("PC locked by phone");
+                    } catch (Exception e) {
+                        System.err.println("Failed to lock PC: " + e.getMessage());
+                    }
+
+                } else if (line.equals("CMD:SIGNOUT_PC")) {
+
+                    try {
+                        Runtime.getRuntime().exec(new String[] {
+                                "cmd.exe", "/c", "shutdown", "/l"
+                        });
+                        System.out.println("PC sign-out triggered by phone");
+                    } catch (Exception e) {
+                        System.err.println("Failed to sign out PC: " + e.getMessage());
+                    }
+
+                } else if (line.equals("CMD:MEDIA_PLAY")) {
+                    MediaBridgeManager.sendCommand("PLAY");
+
+                } else if (line.equals("CMD:MEDIA_PAUSE")) {
+                    MediaBridgeManager.sendCommand("PAUSE");
+
+                } else if (line.equals("CMD:MEDIA_NEXT")) {
+                    MediaBridgeManager.sendCommand("NEXT");
+
+                } else if (line.equals("CMD:MEDIA_PREV")) {
+                    MediaBridgeManager.sendCommand("PREV");
+
+                } else if (line.startsWith("KEY_DOWN:")) {
+                    String key = line.substring("KEY_DOWN:".length());
+                    int code = KeyboardController.toKeyCode(key);
+                    if (code != -1)
+                        KeyboardController.keyDown(code);
+
+                } else if (line.startsWith("KEY_UP:")) {
+                    String key = line.substring("KEY_UP:".length());
+                    int code = KeyboardController.toKeyCode(key);
+                    if (code != -1)
+                        KeyboardController.keyUp(code);
+
+                } else if (line.startsWith("GYRO:")) {
+                    // GYRO:dx,dy — map tilt to arrow keys or mouse
+                    String[] parts = line.substring("GYRO:".length()).split(",");
+                    float dx = Float.parseFloat(parts[0]);
+                    float dy = Float.parseFloat(parts[1]);
+
+                    // Map tilt to WASD — threshold 2.0
+                    if (dy < -2.0f)
+                        KeyboardController.keyDown(KeyEvent.VK_W);
+                    else
+                        KeyboardController.keyUp(KeyEvent.VK_W);
+
+                    if (dy > 2.0f)
+                        KeyboardController.keyDown(KeyEvent.VK_S);
+                    else
+                        KeyboardController.keyUp(KeyEvent.VK_S);
+
+                    if (dx < -2.0f)
+                        KeyboardController.keyDown(KeyEvent.VK_A);
+                    else
+                        KeyboardController.keyUp(KeyEvent.VK_A);
+
+                    if (dx > 2.0f)
+                        KeyboardController.keyDown(KeyEvent.VK_D);
+                    else
+                        KeyboardController.keyUp(KeyEvent.VK_D);
+                } else if (line.startsWith("STEER:")) {
+    float steer = Float.parseFloat(line.substring("STEER:".length()));
+    KeyboardController.steer(steer);
+}
             }
 
         } catch (Exception e) {
-            // Silent disconnect
         } finally {
             androidWriter = null;
+            MediaBridgeManager.stop();
             WindowsServer.onPhoneDisconnected();
             try {
                 client.close();

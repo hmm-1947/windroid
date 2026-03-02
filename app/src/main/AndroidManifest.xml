@@ -28,7 +28,17 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.Windroid"
         tools:targetApi="31">
-
+        <receiver
+            android:name=".MediaCommandReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.joshuastar.windroid.MEDIA_CMD" />
+            </intent-filter>
+        </receiver>
+        <activity
+            android:name=".GameControllerActivity"
+            android:screenOrientation="landscape"
+            android:configChanges="orientation|screenSize"/>
         <activity
             android:name=".DiscoveryActivity"
             android:exported="true"

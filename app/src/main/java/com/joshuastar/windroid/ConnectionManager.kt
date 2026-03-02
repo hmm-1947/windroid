@@ -56,9 +56,26 @@ object ConnectionManager {
                         val line = reader.readLine() ?: break
                         if (line.startsWith("CMD:")) {
                             handleCommand(line.substring(4))
+                        } else if (line.startsWith("CLIPBOARD=")) {
+                            val text = line.removePrefix("CLIPBOARD=")
+                            val ctx = appContext ?: continue
+                            val clipboard = ctx.getSystemService(Context.CLIPBOARD_SERVICE)
+                                    as android.content.ClipboardManager
+                            val clip = android.content.ClipData.newPlainText("windroid", text)
+                            clipboard.setPrimaryClip(clip)
+                            Log.d(TAG, "PC clipboard set on Android: ${text.take(30)}")
+                        } else if (line.startsWith("MEDIA=")) {
+                            val json = line.removePrefix("MEDIA=")
+                            val ctx = appContext ?: continue
+                            Log.d("MEDIA", "Received: $json")
+                            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                                if (MediaNotificationManager.mediaSession == null) {
+                                    MediaNotificationManager.init(ctx)
+                                }
+                                MediaNotificationManager.handle(ctx, json)
+                            }
                         }
                     }
-
                 } catch (e: Exception) {
                     Log.e(TAG, "Connection lost: ${e.message}")
                     writer = null

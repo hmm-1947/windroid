@@ -87,8 +87,8 @@ class ClipboardService : Service() {
         }
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Clipboard Sync Running")
-            .setContentText("Ready to sync clipboard")
+            .setContentTitle("Windroid Running")
+            .setContentText("Connected")
             .setSmallIcon(R.mipmap.ic_launcher)
             .setOngoing(true)
             .build()
