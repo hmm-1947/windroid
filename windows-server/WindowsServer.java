@@ -377,27 +377,38 @@ public class WindowsServer {
         features.add(Box.createVerticalStrut(8));
         features.add(createToggleRow(notifToggle));
 
-        features.add(Box.createVerticalStrut(8));
-        JPanel fileBrowseRow = new JPanel(new BorderLayout());
-        fileBrowseRow.setBackground(Color.decode("#1E1E1E"));
-        fileBrowseRow.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(Color.decode("#2A2A2A"), 1),
-                BorderFactory.createEmptyBorder(10, 14, 10, 14)));
-        fileBrowseRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 50));
+features.add(Box.createVerticalStrut(8));
+JPanel fileBrowseRow = new JPanel(new BorderLayout());
+fileBrowseRow.setBackground(Color.decode("#1E1E1E"));
+fileBrowseRow.setBorder(BorderFactory.createCompoundBorder(
+        BorderFactory.createLineBorder(Color.decode("#2A2A2A"), 1),
+        BorderFactory.createEmptyBorder(10, 14, 10, 14)));
+fileBrowseRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 50));
 
-        JButton fileBrowseBtn = new JButton("Browse Android Files");
-        fileBrowseBtn.setBackground(Color.decode("#ffffff"));
-        fileBrowseBtn.setForeground(Color.decode("#ffffff"));
-        fileBrowseBtn.setBorderPainted(false);
-        fileBrowseBtn.setContentAreaFilled(false);
-        fileBrowseBtn.setFocusPainted(false);
-        fileBrowseBtn.setFont(new Font("Segoe UI", Font.PLAIN, 13));
-        fileBrowseBtn.setHorizontalAlignment(SwingConstants.LEFT);
-        fileBrowseBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-        fileBrowseBtn.addActionListener(e -> AndroidFileBrowser.open());
+JButton fileBrowseBtn = new JButton("Browse Android Files");
+fileBrowseBtn.setBackground(Color.decode("#1E1E1E"));
+fileBrowseBtn.setForeground(Color.decode("#666666"));
+fileBrowseBtn.setBorderPainted(false);
+fileBrowseBtn.setContentAreaFilled(false);
+fileBrowseBtn.setFocusPainted(false);
+fileBrowseBtn.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+fileBrowseBtn.setHorizontalAlignment(SwingConstants.LEFT);
+fileBrowseBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+fileBrowseBtn.addActionListener(e -> AndroidFileBrowser.open());
 
-        fileBrowseRow.add(fileBrowseBtn, BorderLayout.CENTER);
-        features.add(fileBrowseRow);
+JButton fileSettingsBtn = new JButton("⚙");
+fileSettingsBtn.setBackground(Color.decode("#1E1E1E"));
+fileSettingsBtn.setForeground(Color.decode("#555555"));
+fileSettingsBtn.setBorderPainted(false);
+fileSettingsBtn.setContentAreaFilled(false);
+fileSettingsBtn.setFocusPainted(false);
+fileSettingsBtn.setFont(new Font("Segoe UI", Font.PLAIN, 14));
+fileSettingsBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+fileSettingsBtn.addActionListener(e -> AndroidFileBrowser.openSettings(frame));
+
+fileBrowseRow.add(fileBrowseBtn, BorderLayout.CENTER);
+fileBrowseRow.add(fileSettingsBtn, BorderLayout.EAST);
+features.add(fileBrowseRow);
 
         main.add(header, BorderLayout.NORTH);
         main.add(sep, BorderLayout.CENTER);

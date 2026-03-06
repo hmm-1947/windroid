@@ -290,7 +290,10 @@ if (line.startsWith("ANDROID_RES_FILE|")) {
     try {
         String[] parts = line.split("\\|", 3);
         byte[] data = java.util.Base64.getDecoder().decode(parts[2]);
-        java.nio.file.Files.write(java.nio.file.Paths.get(parts[1]), data);
+java.nio.file.Files.write(
+    java.nio.file.Paths.get(AndroidFileBrowser.getDownloadPath(), parts[1]),
+    data
+);
         System.out.println("Downloaded from Android: " + parts[1]);
     } catch (Exception e) {
         e.printStackTrace();
