@@ -274,8 +274,28 @@ public class ClipboardServer {
                     else
                         KeyboardController.keyUp(KeyEvent.VK_D);
                 } else if (line.startsWith("STEER:")) {
-    float steer = Float.parseFloat(line.substring("STEER:".length()));
-    KeyboardController.steer(steer);
+                    float steer = Float.parseFloat(line.substring("STEER:".length()));
+                    KeyboardController.steer(steer);
+                }
+                // -------- FILE ACCESS --------
+if (line.startsWith("FILE_REQ_LIST|") || line.startsWith("FILE_REQ_DOWNLOAD|") || line.equals("FILE_REQ_DRIVES")) {
+    FileAccessHandler.handleMessage(line);
+    continue;
+}
+if (line.startsWith("ANDROID_RES_LIST|")) {
+    AndroidFileBrowser.updateList(line);
+    continue;
+}
+if (line.startsWith("ANDROID_RES_FILE|")) {
+    try {
+        String[] parts = line.split("\\|", 3);
+        byte[] data = java.util.Base64.getDecoder().decode(parts[2]);
+        java.nio.file.Files.write(java.nio.file.Paths.get(parts[1]), data);
+        System.out.println("Downloaded from Android: " + parts[1]);
+    } catch (Exception e) {
+        e.printStackTrace();
+    }
+    continue;
 }
             }
 

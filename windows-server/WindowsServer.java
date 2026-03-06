@@ -264,61 +264,57 @@ public class WindowsServer {
         main.setBackground(Color.decode("#1A1A1A"));
 
         // Header
-JPanel header = new JPanel(new BorderLayout());
-header.setBackground(Color.decode("#1A1A1A"));
-header.setBorder(BorderFactory.createEmptyBorder(28, 32, 20, 32));
+        JPanel header = new JPanel(new BorderLayout());
+        header.setBackground(Color.decode("#1A1A1A"));
+        header.setBorder(BorderFactory.createEmptyBorder(28, 32, 20, 32));
 
+        // LEFT SIDE (title + subtitle + status)
+        JPanel leftHeader = new JPanel();
+        leftHeader.setLayout(new BoxLayout(leftHeader, BoxLayout.Y_AXIS));
+        leftHeader.setBackground(Color.decode("#1A1A1A"));
 
-// LEFT SIDE (title + subtitle + status)
-JPanel leftHeader = new JPanel();
-leftHeader.setLayout(new BoxLayout(leftHeader, BoxLayout.Y_AXIS));
-leftHeader.setBackground(Color.decode("#1A1A1A"));
+        JLabel titleLabel = new JLabel("Windroid");
+        titleLabel.setForeground(Color.WHITE);
+        titleLabel.setFont(new Font("Segoe UI", Font.BOLD, 22));
 
-JLabel titleLabel = new JLabel("Windroid");
-titleLabel.setForeground(Color.WHITE);
-titleLabel.setFont(new Font("Segoe UI", Font.BOLD, 22));
+        subtitleLabel = new JLabel("Waiting for device...");
+        subtitleLabel.setForeground(Color.decode("#555555"));
+        subtitleLabel.setFont(new Font("Segoe UI", Font.PLAIN, 12));
 
-subtitleLabel = new JLabel("Waiting for device...");
-subtitleLabel.setForeground(Color.decode("#555555"));
-subtitleLabel.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        JPanel statusRow = new JPanel();
+        statusRow.setLayout(new BoxLayout(statusRow, BoxLayout.X_AXIS));
+        statusRow.setBackground(Color.decode("#1A1A1A"));
+        statusRow.add(batteryLabel);
+        statusRow.add(Box.createHorizontalStrut(20));
+        statusRow.add(modeLabel);
 
-JPanel statusRow = new JPanel();
-statusRow.setLayout(new BoxLayout(statusRow, BoxLayout.X_AXIS));
-statusRow.setBackground(Color.decode("#1A1A1A"));
-statusRow.add(batteryLabel);
-statusRow.add(Box.createHorizontalStrut(20));
-statusRow.add(modeLabel);
+        leftHeader.add(titleLabel);
+        leftHeader.add(subtitleLabel);
+        leftHeader.add(Box.createVerticalStrut(6));
+        leftHeader.add(statusRow);
 
-leftHeader.add(titleLabel);
-leftHeader.add(subtitleLabel);
-leftHeader.add(Box.createVerticalStrut(6));
-leftHeader.add(statusRow);
+        // RIGHT SIDE (flashlight button)
+        JToggleButton flashlightToggle = new JToggleButton("Flashlight");
+        flashlightToggle.setFocusPainted(false);
+        flashlightToggle.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        flashlightToggle.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 
+        flashlightToggle.addActionListener(e -> {
 
-// RIGHT SIDE (flashlight button)
-JToggleButton flashlightToggle = new JToggleButton("Flashlight");
-flashlightToggle.setFocusPainted(false);
-flashlightToggle.setFont(new Font("Segoe UI", Font.PLAIN, 12));
-flashlightToggle.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+            boolean on = flashlightToggle.isSelected();
 
-flashlightToggle.addActionListener(e -> {
+            ClipboardServer.sendToAndroid(
+                    on ? "CMD:FLASHLIGHT_ON"
+                            : "CMD:FLASHLIGHT_OFF");
+        });
 
-    boolean on = flashlightToggle.isSelected();
+        JPanel rightHeader = new JPanel();
+        rightHeader.setBackground(Color.decode("#1A1A1A"));
+        rightHeader.add(flashlightToggle);
 
-    ClipboardServer.sendToAndroid(
-        on ? "CMD:FLASHLIGHT_ON"
-           : "CMD:FLASHLIGHT_OFF"
-    );
-});
-
-JPanel rightHeader = new JPanel();
-rightHeader.setBackground(Color.decode("#1A1A1A"));
-rightHeader.add(flashlightToggle);
-
-
-// ADD TO HEADER
-header.add(leftHeader, BorderLayout.WEST);
-header.add(rightHeader, BorderLayout.EAST);
+        // ADD TO HEADER
+        header.add(leftHeader, BorderLayout.WEST);
+        header.add(rightHeader, BorderLayout.EAST);
 
         // Divider
         JSeparator sep = new JSeparator();
@@ -380,6 +376,28 @@ header.add(rightHeader, BorderLayout.EAST);
         features.add(createToggleRow(clipboardToggle));
         features.add(Box.createVerticalStrut(8));
         features.add(createToggleRow(notifToggle));
+
+        features.add(Box.createVerticalStrut(8));
+        JPanel fileBrowseRow = new JPanel(new BorderLayout());
+        fileBrowseRow.setBackground(Color.decode("#1E1E1E"));
+        fileBrowseRow.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(Color.decode("#2A2A2A"), 1),
+                BorderFactory.createEmptyBorder(10, 14, 10, 14)));
+        fileBrowseRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 50));
+
+        JButton fileBrowseBtn = new JButton("Browse Android Files");
+        fileBrowseBtn.setBackground(Color.decode("#ffffff"));
+        fileBrowseBtn.setForeground(Color.decode("#ffffff"));
+        fileBrowseBtn.setBorderPainted(false);
+        fileBrowseBtn.setContentAreaFilled(false);
+        fileBrowseBtn.setFocusPainted(false);
+        fileBrowseBtn.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        fileBrowseBtn.setHorizontalAlignment(SwingConstants.LEFT);
+        fileBrowseBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        fileBrowseBtn.addActionListener(e -> AndroidFileBrowser.open());
+
+        fileBrowseRow.add(fileBrowseBtn, BorderLayout.CENTER);
+        features.add(fileBrowseRow);
 
         main.add(header, BorderLayout.NORTH);
         main.add(sep, BorderLayout.CENTER);
