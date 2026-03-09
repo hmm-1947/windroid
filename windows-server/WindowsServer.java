@@ -76,6 +76,7 @@ public class WindowsServer {
     static void onPhoneDisconnected() {
         phoneConnected = false;
         androidIp = null;
+        broadcasting = true; // ← add this
         System.out.println("Phone disconnected — waiting for reconnect");
         updateSubtitle("Phone disconnected — waiting...");
     }
@@ -249,7 +250,7 @@ public class WindowsServer {
             fingerprintLabel.setText(savedFp);
             phonePanel.setVisible(true);
             noPhonePanel.setVisible(false);
-            broadcasting = false;
+            broadcasting = true;
         } else {
             phonePanel.setVisible(false);
             noPhonePanel.setVisible(true);
@@ -266,29 +267,53 @@ public class WindowsServer {
         // Header
         JPanel header = new JPanel(new BorderLayout());
         header.setBackground(Color.decode("#1A1A1A"));
-        header.setBorder(BorderFactory.createEmptyBorder(28, 32, 20, 32));
+        header.setBorder(BorderFactory.createEmptyBorder(28, 16, 20, 16));
 
         // LEFT SIDE (title + subtitle + status)
         JPanel leftHeader = new JPanel();
         leftHeader.setLayout(new BoxLayout(leftHeader, BoxLayout.Y_AXIS));
         leftHeader.setBackground(Color.decode("#1A1A1A"));
+        leftHeader.setAlignmentX(Component.LEFT_ALIGNMENT);
+        leftHeader.setMaximumSize(new Dimension(400, Integer.MAX_VALUE));
+
+        ImageIcon logoIcon = new ImageIcon("logo.png"); // path to your image file
+Image scaledLogo = logoIcon.getImage().getScaledInstance(90, 56, Image.SCALE_SMOOTH);
+
+        JLabel logoLabel = new JLabel(new ImageIcon(scaledLogo));
+        logoLabel.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 8));
+
+        JPanel titleRow = new JPanel();
+        titleRow.setLayout(new BoxLayout(titleRow, BoxLayout.X_AXIS));
+        titleRow.setBackground(Color.decode("#1A1A1A"));
+        titleRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        titleRow.setMaximumSize(new Dimension(400, 60));
+        logoLabel.setAlignmentY(Component.CENTER_ALIGNMENT);
+        titleRow.add(logoLabel);
+        
 
         JLabel titleLabel = new JLabel("Windroid");
         titleLabel.setForeground(Color.WHITE);
         titleLabel.setFont(new Font("Segoe UI", Font.BOLD, 22));
+        titleLabel.setAlignmentY(Component.CENTER_ALIGNMENT);
+        titleRow.add(titleLabel);
+FileDropZone.attach(titleRow);
+
 
         subtitleLabel = new JLabel("Waiting for device...");
         subtitleLabel.setForeground(Color.decode("#555555"));
         subtitleLabel.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        subtitleLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
 
         JPanel statusRow = new JPanel();
         statusRow.setLayout(new BoxLayout(statusRow, BoxLayout.X_AXIS));
         statusRow.setBackground(Color.decode("#1A1A1A"));
+        statusRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        statusRow.setMaximumSize(new Dimension(400, 20));
         statusRow.add(batteryLabel);
         statusRow.add(Box.createHorizontalStrut(20));
         statusRow.add(modeLabel);
 
-        leftHeader.add(titleLabel);
+        leftHeader.add(titleRow);
         leftHeader.add(subtitleLabel);
         leftHeader.add(Box.createVerticalStrut(6));
         leftHeader.add(statusRow);
@@ -377,38 +402,27 @@ public class WindowsServer {
         features.add(Box.createVerticalStrut(8));
         features.add(createToggleRow(notifToggle));
 
-features.add(Box.createVerticalStrut(8));
-JPanel fileBrowseRow = new JPanel(new BorderLayout());
-fileBrowseRow.setBackground(Color.decode("#1E1E1E"));
-fileBrowseRow.setBorder(BorderFactory.createCompoundBorder(
-        BorderFactory.createLineBorder(Color.decode("#2A2A2A"), 1),
-        BorderFactory.createEmptyBorder(10, 14, 10, 14)));
-fileBrowseRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 50));
+        features.add(Box.createVerticalStrut(8));
+        JPanel fileBrowseRow = new JPanel(new BorderLayout());
+        fileBrowseRow.setBackground(Color.decode("#1E1E1E"));
+        fileBrowseRow.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(Color.decode("#2A2A2A"), 1),
+                BorderFactory.createEmptyBorder(10, 14, 10, 14)));
+        fileBrowseRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 50));
 
-JButton fileBrowseBtn = new JButton("Browse Android Files");
-fileBrowseBtn.setBackground(Color.decode("#1E1E1E"));
-fileBrowseBtn.setForeground(Color.decode("#666666"));
-fileBrowseBtn.setBorderPainted(false);
-fileBrowseBtn.setContentAreaFilled(false);
-fileBrowseBtn.setFocusPainted(false);
-fileBrowseBtn.setFont(new Font("Segoe UI", Font.PLAIN, 13));
-fileBrowseBtn.setHorizontalAlignment(SwingConstants.LEFT);
-fileBrowseBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-fileBrowseBtn.addActionListener(e -> AndroidFileBrowser.open());
+        JButton fileBrowseBtn = new JButton("Browse Android Files");
+        fileBrowseBtn.setBackground(Color.decode("#1E1E1E"));
+        fileBrowseBtn.setForeground(Color.decode("#ffffff"));
+        fileBrowseBtn.setBorderPainted(false);
+        fileBrowseBtn.setContentAreaFilled(false);
+        fileBrowseBtn.setFocusPainted(false);
+        fileBrowseBtn.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        fileBrowseBtn.setHorizontalAlignment(SwingConstants.LEFT);
+        fileBrowseBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        fileBrowseBtn.addActionListener(e -> AndroidFileBrowser.open());
 
-JButton fileSettingsBtn = new JButton("⚙");
-fileSettingsBtn.setBackground(Color.decode("#1E1E1E"));
-fileSettingsBtn.setForeground(Color.decode("#555555"));
-fileSettingsBtn.setBorderPainted(false);
-fileSettingsBtn.setContentAreaFilled(false);
-fileSettingsBtn.setFocusPainted(false);
-fileSettingsBtn.setFont(new Font("Segoe UI", Font.PLAIN, 14));
-fileSettingsBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-fileSettingsBtn.addActionListener(e -> AndroidFileBrowser.openSettings(frame));
-
-fileBrowseRow.add(fileBrowseBtn, BorderLayout.CENTER);
-fileBrowseRow.add(fileSettingsBtn, BorderLayout.EAST);
-features.add(fileBrowseRow);
+        fileBrowseRow.add(fileBrowseBtn, BorderLayout.CENTER);
+        features.add(fileBrowseRow);
 
         main.add(header, BorderLayout.NORTH);
         main.add(sep, BorderLayout.CENTER);

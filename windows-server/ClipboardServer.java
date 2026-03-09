@@ -104,6 +104,9 @@ public class ClipboardServer {
 
             WindowsServer.onPhoneConnected(incomingIp, phoneName, fingerprint);
             androidWriter = new PrintWriter(client.getOutputStream(), true);
+
+String pcName = java.net.InetAddress.getLocalHost().getHostName();
+androidWriter.println("PC_NAME=" + pcName); 
             MediaBridgeManager.start();
             System.out.println("Android persistent connection established from: " + incomingIp);
             String line;
@@ -114,7 +117,7 @@ public class ClipboardServer {
                 if (line.startsWith("CLIPBOARD=")) {
                     if (clipboardEnabled) {
                         String text = line.substring("CLIPBOARD=".length());
-                        ignoreNextClipboard = true; // ← add this
+                        ignoreNextClipboard = true;
                         StringSelection selection = new StringSelection(text);
                         Toolkit.getDefaultToolkit().getSystemClipboard().setContents(selection, null);
                         System.out.println("Clipboard set on PC: " + text);
