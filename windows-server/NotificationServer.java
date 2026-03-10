@@ -7,9 +7,9 @@ public class NotificationServer {
 
     private static volatile boolean enabled = true;
     private static final Queue<JWindow> activeToasts = new ConcurrentLinkedQueue<>();
-    private static final int TOAST_WIDTH  = 360;
-    private static final int TOAST_HEIGHT = 90;
-    private static final int TOAST_MARGIN = 10;
+
+    private static final int TOAST_WIDTH = 380;
+    private static final int TOAST_MARGIN = 12;
 
     public static void setEnabled(boolean val) { enabled = val; }
 
@@ -19,7 +19,12 @@ public class NotificationServer {
         int lastPipe = line.lastIndexOf('|');
         if (lastPipe < 0) return;
 
-        String iconBase64 = line.substring(lastPipe + 1).trim();
+        String payload = line.substring(lastPipe + 1);
+        String[] imageParts = payload.split(",", 2);
+
+        String iconBase64 = imageParts.length > 0 ? imageParts[0] : "";
+        String imageBase64 = imageParts.length > 1 ? imageParts[1] : "";
+
         String[] parts = line.substring(0, lastPipe).split("\\|", 7);
 
         String appName    = parts.length > 1 ? parts[1] : "Unknown";
@@ -27,114 +32,152 @@ public class NotificationServer {
         String senderName = parts.length > 3 ? parts[3] : "";
         String text       = parts.length > 4 ? parts[4] : "";
 
-        show(appName, chatTitle, senderName, text, iconBase64);
+        show(appName, chatTitle, senderName, text, iconBase64, imageBase64);
     }
 
     private static void show(String appName, String chatTitle, String senderName,
-                          String text, String iconBase64) {
-    SwingUtilities.invokeLater(() -> {
+                             final String text, String iconBase64, String imageBase64) {
 
-        JWindow toast = new JWindow();
-        toast.setAlwaysOnTop(true);
+        SwingUtilities.invokeLater(() -> {
 
-        boolean isGroup = !chatTitle.isEmpty() && !senderName.isEmpty()
-                          && !chatTitle.equals(senderName);
+            JWindow toast = new JWindow();
+            toast.setAlwaysOnTop(true);
 
-        // ── Outer panel ─────────────────────────────────────────────────
-        JPanel panel = new JPanel(new BorderLayout(12, 0));
-        panel.setBackground(Color.decode("#1E1E1E"));
-        panel.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(Color.decode("#555555"), 1),
-                BorderFactory.createEmptyBorder(12, 14, 12, 14)
-        ));
+            boolean isGroup = !chatTitle.isEmpty() && !senderName.isEmpty()
+                    && !chatTitle.equals(senderName);
 
-        // ── Profile picture (left) ───────────────────────────────────────
-        JLabel iconLabel = new JLabel();
-        iconLabel.setPreferredSize(new Dimension(48, 48));
-        iconLabel.setVerticalAlignment(SwingConstants.CENTER);
-        if (!iconBase64.isEmpty()) {
-            try {
-                byte[] imageBytes = java.util.Base64.getDecoder().decode(iconBase64);
-                Image scaled = new ImageIcon(imageBytes).getImage()
-                        .getScaledInstance(48, 48, Image.SCALE_SMOOTH);
-                iconLabel.setIcon(new ImageIcon(scaled));
-            } catch (Exception e) {
-                System.err.println("Icon decode failed: " + e.getMessage());
+            JPanel panel = new JPanel(new BorderLayout(12, 8));
+            panel.setBackground(Color.decode("#1F1F1F"));
+            panel.setBorder(BorderFactory.createCompoundBorder(
+                    BorderFactory.createLineBorder(Color.decode("#3A3A3A")),
+                    BorderFactory.createEmptyBorder(12, 14, 12, 14)
+            ));
+
+            JPanel topBar = new JPanel(new BorderLayout());
+            topBar.setOpaque(false);
+
+            JLabel appLabel = new JLabel(appName);
+            appLabel.setForeground(Color.decode("#AAAAAA"));
+            appLabel.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+
+            JLabel close = new JLabel("✕");
+            close.setForeground(Color.decode("#AAAAAA"));
+            close.setFont(new Font("Segoe UI", Font.BOLD, 14));
+            close.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+            close.addMouseListener(new java.awt.event.MouseAdapter() {
+                public void mouseClicked(java.awt.event.MouseEvent e) {
+                    toast.dispose();
+                    activeToasts.remove(toast);
+                    reposition();
+                }
+            });
+
+            topBar.add(appLabel, BorderLayout.WEST);
+            topBar.add(close, BorderLayout.EAST);
+
+            panel.add(topBar, BorderLayout.NORTH);
+
+            JLabel iconLabel = new JLabel();
+            iconLabel.setPreferredSize(new Dimension(48, 48));
+
+            if (!iconBase64.isEmpty()) {
+                try {
+                    byte[] imageBytes = java.util.Base64.getDecoder().decode(iconBase64);
+                    Image scaled = new ImageIcon(imageBytes).getImage()
+                            .getScaledInstance(48, 48, Image.SCALE_SMOOTH);
+                    iconLabel.setIcon(new ImageIcon(scaled));
+                } catch (Exception ignored) {}
             }
-        }
-        panel.add(iconLabel, BorderLayout.WEST);
 
-        // ── Right side ───────────────────────────────────────────────────
-        JPanel textPanel = new JPanel(new BorderLayout(0, 3));
-        textPanel.setBackground(Color.decode("#1E1E1E"));
+            panel.add(iconLabel, BorderLayout.WEST);
 
-        // Group name at top (only for group messages)
-        if (isGroup) {
-            JLabel groupLabel = new JLabel("👥 " + chatTitle);
-            groupLabel.setForeground(Color.decode("#888888"));
-            groupLabel.setFont(new Font("Segoe UI", Font.PLAIN, 11));
-            textPanel.add(groupLabel, BorderLayout.NORTH);
-        }
+            JPanel textPanel = new JPanel();
+            textPanel.setLayout(new BoxLayout(textPanel, BoxLayout.Y_AXIS));
+            textPanel.setOpaque(false);
 
-        // Center: sender name + message
-        JPanel centerPanel = new JPanel(new BorderLayout(0, 3));
-        centerPanel.setBackground(Color.decode("#1E1E1E"));
+            if (isGroup) {
+                JLabel group = new JLabel(chatTitle);
+                group.setForeground(Color.decode("#888888"));
+                group.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+                textPanel.add(group);
+            }
 
-        String displayName = !senderName.isEmpty() ? senderName
-                           : !chatTitle.isEmpty()  ? chatTitle
-                           : appName;
+            String displayName = !senderName.isEmpty() ? senderName
+                    : !chatTitle.isEmpty() ? chatTitle
+                    : appName;
 
-        JLabel nameLabel = new JLabel(displayName);
-        nameLabel.setForeground(Color.WHITE);
-        nameLabel.setFont(new Font("Segoe UI", Font.BOLD, 13));
+            JLabel nameLabel = new JLabel(displayName);
+            nameLabel.setForeground(Color.WHITE);
+            nameLabel.setFont(new Font("Segoe UI", Font.BOLD, 13));
 
-        JLabel textLabel = new JLabel(
-                "<html><body style='width:250px'>" + text + "</body></html>");
-        textLabel.setForeground(Color.decode("#BBBBBB"));
-        textLabel.setFont(new Font("Segoe UI", Font.BOLD, 12));
+            final String safeText = text.replace("<","&lt;").replace(">","&gt;");
 
-        centerPanel.add(nameLabel, BorderLayout.NORTH);
-        centerPanel.add(textLabel, BorderLayout.CENTER);
+            JLabel msgLabel = new JLabel(
+                    "<html><div style='width:240px'>" + safeText + "</div></html>");
+            msgLabel.setForeground(Color.decode("#CCCCCC"));
+            msgLabel.setFont(new Font("Segoe UI", Font.PLAIN, 12));
 
-        textPanel.add(centerPanel, BorderLayout.CENTER);
-        panel.add(textPanel, BorderLayout.CENTER);
-        toast.add(panel);
+            textPanel.add(nameLabel);
+            textPanel.add(Box.createVerticalStrut(3));
+            textPanel.add(msgLabel);
 
-        // ── Size: taller for group messages ─────────────────────────────
-        int height = isGroup ? 105 : 90;
+            if (!imageBase64.isEmpty()) {
+                try {
+                    byte[] imgBytes = java.util.Base64.getDecoder().decode(imageBase64);
+                    Image img = new ImageIcon(imgBytes).getImage()
+                            .getScaledInstance(220, 120, Image.SCALE_SMOOTH);
 
-        // ── Position: bottom-right ───────────────────────────────────────
-        Dimension screen = Toolkit.getDefaultToolkit().getScreenSize();
-        int x = screen.width  - TOAST_WIDTH  - TOAST_MARGIN;
-        int y = screen.height - height        - TOAST_MARGIN - 40;
+                    JLabel imgLabel = new JLabel(new ImageIcon(img));
+                    imgLabel.setBorder(BorderFactory.createEmptyBorder(6,0,0,0));
+                    textPanel.add(imgLabel);
 
-        toast.setBounds(x, y, TOAST_WIDTH, height);
-        toast.setVisible(true);
-        activeToasts.add(toast);
+                } catch (Exception ignored) {}
+            }
 
-        Timer timer = new Timer(5000, e -> {
-            toast.dispose();
-            activeToasts.remove(toast);
+            panel.add(textPanel, BorderLayout.CENTER);
+
+            toast.add(panel);
+
+            panel.addMouseListener(new java.awt.event.MouseAdapter() {
+                public void mouseEntered(java.awt.event.MouseEvent e) {
+                    panel.setBackground(Color.decode("#262626"));
+                }
+                public void mouseExited(java.awt.event.MouseEvent e) {
+                    panel.setBackground(Color.decode("#1F1F1F"));
+                }
+            });
+
+            toast.setSize(TOAST_WIDTH, panel.getPreferredSize().height + 10);
+
+            activeToasts.add(toast);
+            reposition();
+
+            toast.setVisible(true);
+
+            Timer timer = new Timer(6000, e -> {
+                toast.dispose();
+                activeToasts.remove(toast);
+                reposition();
+            });
+            timer.setRepeats(false);
+            timer.start();
         });
-        timer.setRepeats(false);
-        timer.start();
-    });
-}
+    }
 
-    private static Color getAppColor(String appName) {
-        switch (appName.toLowerCase()) {
-            case "whatsapp":  return Color.decode("#25D366");
-            case "telegram":  return Color.decode("#0088CC");
-            case "instagram": return Color.decode("#E1306C");
-            case "gmail":     return Color.decode("#EA4335");
-            case "messages":  return Color.decode("#1A73E8");
-            default:
-                int hash = appName.hashCode();
-                return new Color(
-                    Math.abs(hash % 200) + 55,
-                    Math.abs((hash >> 8)  % 200) + 55,
-                    Math.abs((hash >> 16) % 200) + 55
-                );
+    private static void reposition() {
+
+        Dimension screen = Toolkit.getDefaultToolkit().getScreenSize();
+
+        int y = screen.height - 50;
+
+        for (JWindow toast : activeToasts) {
+
+            int height = toast.getHeight();
+            y -= height + TOAST_MARGIN;
+
+            int x = screen.width - TOAST_WIDTH - TOAST_MARGIN;
+
+            toast.setLocation(x, y);
         }
     }
 }

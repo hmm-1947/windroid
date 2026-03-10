@@ -36,6 +36,7 @@ public class WindowsServer {
         startDiscoveryBroadcast();
         ClipboardServer.start(CLIPBOARD_PORT);
         ScreenMirrorServer.start(MIRROR_PORT);
+        FileReceiveServer.start();
         SwingUtilities.invokeLater(WindowsServer::createUI);
     }
 
@@ -109,7 +110,26 @@ public class WindowsServer {
                 subtitleLabel.setText(text);
         });
     }
-
+public static void onMirrorStopped() {
+    SwingUtilities.invokeLater(() -> {
+        if (mirrorToggle != null && mirrorToggle.isSelected()) {
+            mirrorToggle.setSelected(false);
+            updateToggleStyle(mirrorToggle);
+            // Also sync the ON/OFF dot — find it via the toggle's parent row
+            Container row = mirrorToggle.getParent();
+            if (row != null) {
+                for (Component c : row.getComponents()) {
+                    if (c instanceof JLabel label) {
+                        label.setText("OFF");
+                        label.setForeground(Color.decode("#555555"));
+                    }
+                }
+            }
+        }
+        ScreenMirrorServer.setEnabled(false);
+        System.out.println("Mirror toggle reset — permission was denied or service stopped");
+    });
+}
     private static void createUI() {
         try {
             UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
@@ -117,6 +137,8 @@ public class WindowsServer {
         }
 
         JFrame frame = new JFrame("Windroid");
+        ImageIcon appIcon = new ImageIcon("mainlogo.png");
+frame.setIconImage(appIcon.getImage());
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         frame.setSize(700, 420);
         frame.setMinimumSize(new Dimension(600, 360));

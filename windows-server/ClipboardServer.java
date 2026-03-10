@@ -105,8 +105,8 @@ public class ClipboardServer {
             WindowsServer.onPhoneConnected(incomingIp, phoneName, fingerprint);
             androidWriter = new PrintWriter(client.getOutputStream(), true);
 
-String pcName = java.net.InetAddress.getLocalHost().getHostName();
-androidWriter.println("PC_NAME=" + pcName); 
+            String pcName = java.net.InetAddress.getLocalHost().getHostName();
+            androidWriter.println("PC_NAME=" + pcName);
             MediaBridgeManager.start();
             System.out.println("Android persistent connection established from: " + incomingIp);
             String line;
@@ -126,6 +126,8 @@ androidWriter.println("PC_NAME=" + pcName);
 
                     NotificationServer.handle(line);
 
+                } else if (line.equals("MIRROR_STOPPED")) {
+                    WindowsServer.onMirrorStopped();
                 } else if (line.startsWith("STATUS|")) {
 
                     String[] parts = line.split("\\|");
@@ -280,29 +282,33 @@ androidWriter.println("PC_NAME=" + pcName);
                     float steer = Float.parseFloat(line.substring("STEER:".length()));
                     KeyboardController.steer(steer);
                 }
+
+                if (line.startsWith("KEY:")) {
+                    RemoteKeyboard.handle(line);
+                }
                 // -------- FILE ACCESS --------
-if (line.startsWith("FILE_REQ_LIST|") || line.startsWith("FILE_REQ_DOWNLOAD|") || line.equals("FILE_REQ_DRIVES")) {
-    FileAccessHandler.handleMessage(line);
-    continue;
-}
-if (line.startsWith("ANDROID_RES_LIST|")) {
-    AndroidFileBrowser.updateList(line);
-    continue;
-}
-if (line.startsWith("ANDROID_RES_FILE|")) {
-    try {
-        String[] parts = line.split("\\|", 3);
-        byte[] data = java.util.Base64.getDecoder().decode(parts[2]);
-java.nio.file.Files.write(
-    java.nio.file.Paths.get(AndroidFileBrowser.getDownloadPath(), parts[1]),
-    data
-);
-        System.out.println("Downloaded from Android: " + parts[1]);
-    } catch (Exception e) {
-        e.printStackTrace();
-    }
-    continue;
-}
+                if (line.startsWith("FILE_REQ_LIST|") || line.startsWith("FILE_REQ_DOWNLOAD|")
+                        || line.equals("FILE_REQ_DRIVES")) {
+                    FileAccessHandler.handleMessage(line);
+                    continue;
+                }
+                if (line.startsWith("ANDROID_RES_LIST|")) {
+                    AndroidFileBrowser.updateList(line);
+                    continue;
+                }
+                if (line.startsWith("ANDROID_RES_FILE|")) {
+                    try {
+                        String[] parts = line.split("\\|", 3);
+                        byte[] data = java.util.Base64.getDecoder().decode(parts[2]);
+                        java.nio.file.Files.write(
+                                java.nio.file.Paths.get(AndroidFileBrowser.getDownloadPath(), parts[1]),
+                                data);
+                        System.out.println("Downloaded from Android: " + parts[1]);
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                    }
+                    continue;
+                }
             }
 
         } catch (Exception e) {

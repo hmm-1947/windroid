@@ -5,6 +5,7 @@ import java.awt.image.BufferedImage;
 import java.io.*;
 import java.net.*;
 import javax.imageio.ImageIO;
+import java.util.concurrent.CountDownLatch;
 
 public class ScreenMirrorServer {
 
@@ -15,9 +16,10 @@ public class ScreenMirrorServer {
     private static int frameCount = 0;
     private static long lastFrameTime = 0;
     private static BufferedImage currentImage = null;
-    private static int imageWidth = 0;
-    private static int imageHeight = 0;
     private static volatile boolean enabled = false;
+
+    // Signals that the ServerSocket is bound and ready before we tell Android to connect
+    private static final CountDownLatch serverReady = new CountDownLatch(1);
 
     public static void setEnabled(boolean val) {
         enabled = val;
@@ -36,6 +38,9 @@ public class ScreenMirrorServer {
                 serverSocket.setReuseAddress(true);
                 System.out.println("🖥️  Mirror server listening on port " + port);
 
+                // Signal that we are bound and ready BEFORE accepting any connection
+                serverReady.countDown();
+
                 while (true) {
                     try {
                         Socket client = serverSocket.accept();
@@ -52,10 +57,32 @@ public class ScreenMirrorServer {
                 }
             } catch (BindException e) {
                 System.err.println("❌ Mirror port already in use!");
+                serverReady.countDown(); // Unblock so requestMirrorStart doesn't hang
             } catch (Exception e) {
                 e.printStackTrace();
+                serverReady.countDown();
             }
-        }).start();
+        }, "MirrorServerThread").start();
+    }
+
+    /**
+     * Call this to tell Android to start mirroring.
+     * Waits until the ServerSocket is bound so the phone never connects to a closed port.
+     */
+    public static void requestMirrorStart() {
+        new Thread(() -> {
+            try {
+                serverReady.await(); // Block until socket is ready
+                ClipboardServer.sendToAndroid("CMD:START_MIRROR");
+                System.out.println("📡 Sent START_MIRROR to Android");
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }, "MirrorStartThread").start();
+    }
+
+    public static void requestMirrorStop() {
+        ClipboardServer.sendToAndroid("CMD:STOP_MIRROR");
     }
 
     private static void handleMirrorClient(Socket client) {
@@ -69,21 +96,24 @@ public class ScreenMirrorServer {
 
             if (headerStr.equals("FRAME:")) {
                 int imageSize = dis.readInt();
+                if (imageSize <= 0 || imageSize > 10 * 1024 * 1024) {
+                    // Sanity check: reject obviously bad frame sizes
+                    System.out.println("⚠️  Rejected frame with suspicious size: " + imageSize);
+                    return;
+                }
+
                 byte[] imageData = new byte[imageSize];
                 dis.readFully(imageData);
 
-                ByteArrayInputStream bais = new ByteArrayInputStream(imageData);
-                BufferedImage image = ImageIO.read(bais);
+                BufferedImage image = ImageIO.read(new ByteArrayInputStream(imageData));
 
                 if (image != null) {
                     frameCount++;
                     long currentTime = System.currentTimeMillis();
 
                     if (frameCount % 30 == 0 && lastFrameTime > 0) {
-                        long timeDiff = currentTime - lastFrameTime;
-                        double fps = 30000.0 / timeDiff;
-                        System.out.println("📺 Frame #" + frameCount + " (" +
-                                String.format("%.1f", fps) + " FPS)");
+                        double fps = 30000.0 / (currentTime - lastFrameTime);
+                        System.out.printf("📺 Frame #%d (%.1f FPS)%n", frameCount, fps);
                         lastFrameTime = currentTime;
                     }
                     if (frameCount % 30 == 0) lastFrameTime = currentTime;
@@ -92,7 +122,7 @@ public class ScreenMirrorServer {
                 }
             }
         } catch (SocketTimeoutException | EOFException e) {
-            // Normal
+            // Normal disconnection
         } catch (Exception e) {
             if (e.getMessage() != null && !e.getMessage().contains("Connection reset")) {
                 System.out.println("Frame error: " + e.getMessage());
@@ -104,15 +134,13 @@ public class ScreenMirrorServer {
 
     private static void displayMirrorImage(BufferedImage image) {
         currentImage = image;
-        imageWidth = image.getWidth();
-        imageHeight = image.getHeight();
 
         SwingUtilities.invokeLater(() -> {
             if (!mirrorWindowCreated) {
                 createMirrorWindow(image.getWidth(), image.getHeight());
             }
 
-            int labelWidth = imageLabel.getWidth();
+            int labelWidth  = imageLabel.getWidth();
             int labelHeight = imageLabel.getHeight();
 
             if (labelWidth > 0 && labelHeight > 0) {
@@ -127,20 +155,14 @@ public class ScreenMirrorServer {
     }
 
     private static Image getScaledImage(BufferedImage image, int maxWidth, int maxHeight) {
-        double scale = Math.min((double) maxWidth / image.getWidth(),
+        double scale = Math.min((double) maxWidth  / image.getWidth(),
                                 (double) maxHeight / image.getHeight());
         return image.getScaledInstance(
-                (int) (image.getWidth() * scale),
+                (int) (image.getWidth()  * scale),
                 (int) (image.getHeight() * scale),
                 Image.SCALE_SMOOTH);
     }
-public static void requestMirrorStart() {
-    ClipboardServer.sendToAndroid("CMD:START_MIRROR");
-}
 
-public static void requestMirrorStop() {
-    ClipboardServer.sendToAndroid("CMD:STOP_MIRROR");
-}
     private static void createMirrorWindow(int w, int h) {
         mirrorFrame = new JFrame("Windroid - Screen Mirror");
         mirrorFrame.setLayout(new BorderLayout());
@@ -151,13 +173,12 @@ public static void requestMirrorStop() {
                 super.paintComponent(g);
                 if (currentImage != null && getWidth() > 0 && getHeight() > 0) {
                     Image scaled = getScaledImage(currentImage, getWidth(), getHeight());
-                    int x = (getWidth() - scaled.getWidth(null)) / 2;
+                    int x = (getWidth()  - scaled.getWidth(null))  / 2;
                     int y = (getHeight() - scaled.getHeight(null)) / 2;
                     g.drawImage(scaled, x, y, null);
                 }
             }
         };
-
         imageLabel.setHorizontalAlignment(JLabel.CENTER);
         imageLabel.setBackground(Color.BLACK);
         imageLabel.setOpaque(true);
@@ -174,9 +195,7 @@ public static void requestMirrorStop() {
         mirrorFrame.add(statusLabel, BorderLayout.SOUTH);
 
         mirrorFrame.addComponentListener(new ComponentAdapter() {
-            public void componentResized(ComponentEvent evt) {
-                imageLabel.repaint();
-            }
+            public void componentResized(ComponentEvent evt) { imageLabel.repaint(); }
         });
 
         mirrorFrame.setDefaultCloseOperation(JFrame.HIDE_ON_CLOSE);
