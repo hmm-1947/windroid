@@ -14,6 +14,7 @@ const val DISCOVERY_PORT = 9876
 const val DISCOVERY_MESSAGE = "WINDROID_SERVER"
 const val PREF_NAME = "windroid_prefs"
 const val PREF_SERVER_IP = "server_ip"
+const val CLIPBOARD_PORT = 1234
 
 class DiscoveryActivity : ComponentActivity() {
 
@@ -21,14 +22,16 @@ class DiscoveryActivity : ComponentActivity() {
     private lateinit var statusText: TextView
     private val discoveredServers = mutableSetOf<String>()
     private var isListening = true
+    private var discoverySocket: DatagramSocket? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // If already connected before, go straight to main
         val prefs = getSharedPreferences(PREF_NAME, MODE_PRIVATE)
         val savedIp = prefs.getString(PREF_SERVER_IP, null)
+
         if (savedIp != null) {
+            ConnectionManager.PersistentService.start(applicationContext)
             goToMain(savedIp)
             return
         }
@@ -63,7 +66,6 @@ class DiscoveryActivity : ComponentActivity() {
 
         statusText = subtitle
 
-        // Spinner
         val spinner = ProgressBar(this).apply {
             layoutParams = LinearLayout.LayoutParams(80, 80).apply {
                 gravity = Gravity.CENTER_HORIZONTAL
@@ -86,7 +88,6 @@ class DiscoveryActivity : ComponentActivity() {
             )
         }
 
-        // Manual IP option at bottom
         val manualBtn = TextView(this).apply {
             text = "Enter IP manually"
             textSize = 13f
@@ -107,10 +108,17 @@ class DiscoveryActivity : ComponentActivity() {
     }
 
     private fun startListening() {
+        discoveredServers.clear()
+        isListening = true
         Thread {
             try {
-                val socket = DatagramSocket(DISCOVERY_PORT)
-                socket.broadcast = true
+                discoverySocket?.close()
+                val socket = DatagramSocket(null).apply {
+                    reuseAddress = true
+                    bind(java.net.InetSocketAddress(DISCOVERY_PORT))
+                    broadcast = true
+                }
+                discoverySocket = socket
                 val buffer = ByteArray(256)
 
                 while (isListening) {
@@ -149,11 +157,11 @@ class DiscoveryActivity : ComponentActivity() {
             ).apply { bottomMargin = 12 }
 
             setOnClickListener {
-                // Save IP and go to main
                 getSharedPreferences(PREF_NAME, MODE_PRIVATE)
                     .edit()
                     .putString(PREF_SERVER_IP, ip)
                     .apply()
+                ConnectionManager.PersistentService.start(applicationContext)
                 goToMain(ip)
             }
         }
@@ -180,6 +188,7 @@ class DiscoveryActivity : ComponentActivity() {
                         .edit()
                         .putString(PREF_SERVER_IP, ip)
                         .apply()
+                    ConnectionManager.PersistentService.start(applicationContext)
                     goToMain(ip)
                 }
             }
@@ -189,7 +198,6 @@ class DiscoveryActivity : ComponentActivity() {
 
     private fun goToMain(ip: String) {
         isListening = false
-        // Pass IP to MainActivity via intent
         val intent = Intent(this, MainActivity::class.java).apply {
             putExtra("server_ip", ip)
         }
@@ -200,5 +208,7 @@ class DiscoveryActivity : ComponentActivity() {
     override fun onDestroy() {
         super.onDestroy()
         isListening = false
+        discoverySocket?.close()
+        discoverySocket = null
     }
 }

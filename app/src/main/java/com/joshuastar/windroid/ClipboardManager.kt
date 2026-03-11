@@ -44,13 +44,10 @@ object ClipboardSender {
 
         Log.d("CLIPBOARD", "Sending: $text")
 
-        if (!ConnectionManager.isConnected()) {
-            val prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
-            val ip = prefs.getString(PREF_SERVER_IP, "") ?: ""
-            if (ip.isNotEmpty()) {
-                ConnectionManager.connect(ip, PORT)
-                Thread.sleep(800) // small wait for connection
-            }
+        if (ConnectionManager.ignoreNextClipboard) {
+            ConnectionManager.ignoreNextClipboard = false
+            Log.d("CLIPBOARD", "Ignored clipboard (came from PC)")
+            return
         }
 
         ConnectionManager.send("CLIPBOARD=$text")
@@ -65,10 +62,20 @@ class ClipboardService : Service() {
     override fun onCreate() {
         super.onCreate()
         startForeground(1, createNotification())
+
+        val ip = getSharedPreferences(PREF_NAME, MODE_PRIVATE)
+            .getString(PREF_SERVER_IP, "") ?: ""
+        if (ip.isNotEmpty()) {
+            ConnectionManager.connect(ip, PORT, this)
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        return START_STICKY
+        val ip = intent?.getStringExtra("server_ip")
+        if (ip != null && ip.isNotEmpty()) {
+            ConnectionManager.connect(ip, PORT, this)
+        }
+        return START_STICKY  // ← this makes Android restart the service if killed
     }
 
     override fun onBind(intent: Intent?): IBinder? = null

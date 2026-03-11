@@ -7,7 +7,6 @@
         android:required="false" />
 
     <uses-permission android:name="android.permission.INTERNET" />
-    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
@@ -17,6 +16,13 @@
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>
     <uses-permission android:name="android.permission.CAMERA"/>
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+        android:maxSdkVersion="28" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:allowBackup="true"
@@ -28,6 +34,7 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.Windroid"
         tools:targetApi="31">
+        <receiver android:name=".ConnectionManager$ClipboardReceiver" android:exported="false" />
         <receiver
             android:name=".MediaCommandReceiver"
             android:exported="false">
@@ -39,6 +46,8 @@
             android:name=".GameControllerActivity"
             android:screenOrientation="landscape"
             android:configChanges="orientation|screenSize"/>
+        <activity android:name=".PcFileBrowserActivity" />
+        <activity android:name=".KeyboardActivity" />
         <activity
             android:name=".DiscoveryActivity"
             android:exported="true"
@@ -64,7 +73,12 @@
             android:noHistory="true"
             android:taskAffinity=""
             android:finishOnTaskLaunch="true"/>
-
+        <service
+            android:name="com.joshuastar.windroid.ConnectionManager$PersistentService"
+            android:enabled="true"
+            android:exported="false"
+            android:stopWithTask="false"
+            android:foregroundServiceType="dataSync" />
         <service
             android:name=".ClipboardService"
             android:enabled="true"
@@ -74,6 +88,15 @@
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="Network clipboard sync with PC" />
         </service>
+        <receiver
+            android:name="com.joshuastar.windroid.ConnectionManager$BootReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+            </intent-filter>
+        </receiver>
         <service
             android:name=".PhoneNotificationListener"
             android:exported="true"
@@ -99,7 +122,15 @@
             android:enabled="true"
             android:exported="false"
             android:foregroundServiceType="mediaProjection" />
-
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.provider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
         <service
             android:name=".ClipboardAccessibilityService"
             android:exported="true"

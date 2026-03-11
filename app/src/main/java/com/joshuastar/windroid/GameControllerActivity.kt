@@ -9,6 +9,7 @@ import android.view.*
 import android.widget.*
 import androidx.activity.ComponentActivity
 import kotlin.math.abs
+import kotlin.math.sqrt
 
 data class ButtonConfig(
     val key: String,
@@ -37,23 +38,23 @@ class GameControllerActivity : ComponentActivity(), SensorEventListener {
     private val buttonViews = mutableMapOf<String, View>()
 
     private var filteredX = 0f
-    private val alpha = 0.08f
-    private val deadZone = 3.0f
-    private val sensitivity = 1.0f
+    private val alpha = 0.20f
+    private val deadZone = 1.2f
+    private val sensitivity = 1.8f
 
     private val defaultConfigs = listOf(
         ButtonConfig("W","▲",0.12f,0.30f,190f),
         ButtonConfig("A","◀",0.06f,0.55f,190f),
         ButtonConfig("S","▼",0.12f,0.80f,190f),
         ButtonConfig("D","▶",0.22f,0.55f,190f),
-        ButtonConfig("SPACE","NOS",0.45f,0.80f,210f,"#1E88E5"),
-        ButtonConfig("ENTER","GO",0.65f,0.80f,200f,"#43A047"),
-        ButtonConfig("SHIFT","BRK",0.32f,0.80f,180f),
-        ButtonConfig("Q","L1",0.75f,0.30f,180f),
-        ButtonConfig("E","R1",0.90f,0.30f,180f),
-        ButtonConfig("R","RST",0.82f,0.30f,180f,"#C62828"),
-        ButtonConfig("F","CAM",0.75f,0.60f,180f),
-        ButtonConfig("Z","MAP",0.90f,0.60f,180f),
+        ButtonConfig("SPACE","SPC",0.45f,0.80f,210f,"#1E88E5"),
+        ButtonConfig("ENTER","ENT",0.65f,0.80f,200f,"#43A047"),
+        ButtonConfig("SHIFT","SHT",0.32f,0.80f,180f),
+        ButtonConfig("Q","Q",0.75f,0.30f,180f),
+        ButtonConfig("E","E",0.90f,0.30f,180f),
+        ButtonConfig("R","R",0.82f,0.30f,180f,"#C62828"),
+        ButtonConfig("F","F",0.75f,0.60f,180f),
+        ButtonConfig("Z","Z",0.90f,0.60f,180f),
         ButtonConfig("ESC","ESC",0.92f,0.18f,170f)
     )
 
@@ -68,7 +69,10 @@ class GameControllerActivity : ComponentActivity(), SensorEventListener {
         loadConfigs()
 
         container = FrameLayout(this).apply {
-            setBackgroundColor(Color.parseColor("#0F0F14"))
+            background = GradientDrawable(
+                GradientDrawable.Orientation.TOP_BOTTOM,
+                intArrayOf(Color.parseColor("#0B0B10"), Color.parseColor("#12121A"))
+            )
         }
 
         setContentView(container)
@@ -78,14 +82,16 @@ class GameControllerActivity : ComponentActivity(), SensorEventListener {
         buildGyroLabel()
     }
 
+    private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
+
     private fun buildTopBar() {
         val bar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(32, 80, 32, 24)
+            setPadding(dp(18), dp(48), dp(18), dp(18))
             background = GradientDrawable(
                 GradientDrawable.Orientation.LEFT_RIGHT,
-                intArrayOf(Color.parseColor("#15151A"), Color.parseColor("#101015"))
+                intArrayOf(Color.parseColor("#171720"), Color.parseColor("#0F0F16"))
             )
             elevation = 12f
             layoutParams = FrameLayout.LayoutParams(
@@ -99,17 +105,17 @@ class GameControllerActivity : ComponentActivity(), SensorEventListener {
 
         val title = TextView(this).apply {
             text = "Racing Controller"
-            textSize = 19f
+            textSize = 18f
             setTextColor(Color.WHITE)
-            gravity = Gravity.CENTER
-            layoutParams = LinearLayout.LayoutParams(0,
-                LinearLayout.LayoutParams.WRAP_CONTENT,1f)
+            gravity = Gravity.CENTER_VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { marginEnd = dp(12) }
         }
 
         gyroToggleBtn = createChip("Gyro OFF")
-        gyroToggleBtn.setOnClickListener {
-            toggleGyro()
-        }
+        gyroToggleBtn.setOnClickListener { toggleGyro() }
 
         editBtn = createChip("Edit")
         editBtn.setOnClickListener { toggleEditMode() }
@@ -134,17 +140,16 @@ class GameControllerActivity : ComponentActivity(), SensorEventListener {
             this.text = text
             textSize = 14f
             setTextColor(Color.WHITE)
-            setPadding(36,16,36,16)
+            setPadding(dp(20), dp(10), dp(20), dp(10))
             background = GradientDrawable().apply {
-                cornerRadius = 70f
-                setColor(Color.parseColor("#2A2A33"))
+                cornerRadius = 80f
+                setColor(Color.parseColor("#262633"))
             }
-            val lp = LinearLayout.LayoutParams(
+            elevation = 6f
+            layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
-            )
-            lp.marginEnd = 18
-            layoutParams = lp
+            ).apply { marginEnd = dp(12) }
         }
     }
 
@@ -157,7 +162,7 @@ class GameControllerActivity : ComponentActivity(), SensorEventListener {
             val h = container.height.toFloat()
 
             configs.forEach { cfg ->
-                val btn = createGameButton(cfg,w,h)
+                val btn = createGameButton(cfg, w, h)
                 container.addView(btn)
                 buttonViews[cfg.key] = btn
             }
@@ -165,6 +170,7 @@ class GameControllerActivity : ComponentActivity(), SensorEventListener {
     }
 
     private fun createGameButton(cfg: ButtonConfig, screenW: Float, screenH: Float): View {
+
         val drawable = GradientDrawable().apply {
             cornerRadius = cfg.size
             setColor(Color.parseColor(cfg.color))
@@ -174,15 +180,15 @@ class GameControllerActivity : ComponentActivity(), SensorEventListener {
             text = cfg.label
             gravity = Gravity.CENTER
             setTextColor(Color.WHITE)
-            textSize = (cfg.size/7f).coerceIn(18f,32f)
+            textSize = (cfg.size / 7f).coerceIn(18f, 32f)
             background = drawable
-            elevation = 16f
+            elevation = 18f
             layoutParams = FrameLayout.LayoutParams(
                 cfg.size.toInt(), cfg.size.toInt()
             ).apply {
                 gravity = Gravity.TOP or Gravity.START
-                leftMargin = (cfg.x*screenW - cfg.size/2).toInt()
-                topMargin = (cfg.y*screenH - cfg.size/2).toInt()
+                leftMargin = (cfg.x * screenW - cfg.size / 2).toInt()
+                topMargin = (cfg.y * screenH - cfg.size / 2).toInt()
             }
         }
 
@@ -191,38 +197,39 @@ class GameControllerActivity : ComponentActivity(), SensorEventListener {
         var lastPinchDist = -1f
 
         btn.setOnTouchListener { v, event ->
+
             if (!editMode) {
                 when (event.action) {
                     MotionEvent.ACTION_DOWN -> {
                         sendKeyDown(cfg.key)
-                        v.scaleX = 0.9f
-                        v.scaleY = 0.9f
+                        v.scaleX = 0.85f
+                        v.scaleY = 0.85f
+                        v.alpha = 0.85f
                     }
                     MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                         sendKeyUp(cfg.key)
                         v.scaleX = 1f
                         v.scaleY = 1f
+                        v.alpha = 1f
                     }
                 }
                 true
             } else {
+
                 val lp = v.layoutParams as FrameLayout.LayoutParams
                 val screenW = container.width.toFloat()
                 val screenH = container.height.toFloat()
 
                 when (event.actionMasked) {
+
                     MotionEvent.ACTION_DOWN -> {
                         dragOffsetX = event.rawX - lp.leftMargin
                         dragOffsetY = event.rawY - lp.topMargin
                         lastPinchDist = -1f
                     }
-                    MotionEvent.ACTION_POINTER_DOWN -> {
-                        // Second finger touched — init pinch
-                        lastPinchDist = -1f
-                    }
+
                     MotionEvent.ACTION_MOVE -> {
                         if (event.pointerCount == 1) {
-                            // Single finger — drag
                             val newLeft = (event.rawX - dragOffsetX)
                                 .toInt().coerceIn(0, (screenW - cfg.size).toInt())
                             val newTop = (event.rawY - dragOffsetY)
@@ -236,36 +243,24 @@ class GameControllerActivity : ComponentActivity(), SensorEventListener {
                             cfg.y = (newTop + cfg.size / 2) / screenH
 
                         } else if (event.pointerCount == 2) {
-                            // Two fingers — pinch to resize
                             val dx = event.getX(0) - event.getX(1)
                             val dy = event.getY(0) - event.getY(1)
-                            val dist = Math.sqrt((dx * dx + dy * dy).toDouble()).toFloat()
+                            val dist = sqrt(dx * dx + dy * dy)
 
                             if (lastPinchDist > 0) {
-                                val scale = dist / lastPinchDist
-                                val newSize = (cfg.size * scale).coerceIn(80f, 300f)
+                                val newSize = (cfg.size * dist / lastPinchDist).coerceIn(80f, 300f)
                                 cfg.size = newSize
-
                                 lp.width = newSize.toInt()
                                 lp.height = newSize.toInt()
-                                lp.leftMargin = lp.leftMargin
-                                    .coerceIn(0, (screenW - newSize).toInt())
-                                lp.topMargin = lp.topMargin
-                                    .coerceIn(0, (screenH - newSize).toInt())
                                 v.layoutParams = lp
-
-                                // Update text size with button size
-                                (v as? TextView)?.textSize = (newSize / 7f).coerceIn(18f, 32f)
-
-                                // Update drawable corner radius
-                                (v.background as? GradientDrawable)?.cornerRadius = newSize
+                                (v as TextView).textSize = (newSize / 7f).coerceIn(18f, 32f)
+                                (v.background as GradientDrawable).cornerRadius = newSize
                             }
                             lastPinchDist = dist
                         }
                     }
-                    MotionEvent.ACTION_POINTER_UP -> {
-                        lastPinchDist = -1f
-                    }
+
+                    MotionEvent.ACTION_POINTER_UP -> lastPinchDist = -1f
                 }
                 true
             }
@@ -279,7 +274,7 @@ class GameControllerActivity : ComponentActivity(), SensorEventListener {
         if (gyroEnabled) {
             gyroToggleBtn.text = "Gyro ON"
             gyroToggleBtn.setTextColor(Color.parseColor("#4CAF50"))
-            sensorManager.registerListener(this,accelerometer,SensorManager.SENSOR_DELAY_GAME)
+            sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_GAME)
         } else {
             gyroToggleBtn.text = "Gyro OFF"
             gyroToggleBtn.setTextColor(Color.WHITE)
@@ -288,22 +283,17 @@ class GameControllerActivity : ComponentActivity(), SensorEventListener {
     }
 
     override fun onSensorChanged(event: SensorEvent) {
-        if(!gyroEnabled) return
-        if(event.sensor.type != Sensor.TYPE_ACCELEROMETER) return
+        if (!gyroEnabled) return
+        if (event.sensor.type != Sensor.TYPE_ACCELEROMETER) return
 
-        val rawX = -event.values[1]
-
+        val rawX = event.values[1]
         filteredX = alpha * rawX + (1 - alpha) * filteredX
 
-        val steering = -filteredX * sensitivity
+        var steering = (filteredX * sensitivity).coerceIn(-10f, 10f)
+        if (abs(steering) < deadZone) steering = 0f
 
-        if(abs(steering) < deadZone){
-            ConnectionManager.send("STEER:0")
-            gyroLabel.text = "Steering: 0"
-        } else {
-            ConnectionManager.send("STEER:${"%.2f".format(steering)}")
-            gyroLabel.text = "Steering: ${"%.1f".format(steering)}"
-        }
+        ConnectionManager.send("STEER:${"%.2f".format(steering)}")
+        gyroLabel.text = "Steering: ${"%.1f".format(steering)}"
     }
 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
@@ -311,13 +301,13 @@ class GameControllerActivity : ComponentActivity(), SensorEventListener {
     private fun buildGyroLabel() {
         gyroLabel = TextView(this).apply {
             textSize = 14f
-            setTextColor(Color.parseColor("#777799"))
+            setTextColor(Color.parseColor("#7A7A9A"))
             layoutParams = FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.WRAP_CONTENT,
                 FrameLayout.LayoutParams.WRAP_CONTENT
             ).apply {
                 gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
-                bottomMargin = 50
+                bottomMargin = dp(30)
             }
         }
         container.addView(gyroLabel)
@@ -325,9 +315,9 @@ class GameControllerActivity : ComponentActivity(), SensorEventListener {
 
     private fun toggleEditMode() {
         editMode = !editMode
-        editBtn.text = if(editMode)"Save" else "Edit"
-        resetBtn.visibility = if(editMode)View.VISIBLE else View.GONE
-        if(!editMode) saveConfigs()
+        editBtn.text = if (editMode) "Save" else "Edit"
+        resetBtn.visibility = if (editMode) View.VISIBLE else View.GONE
+        if (!editMode) saveConfigs()
     }
 
     private fun resetToDefault() {
@@ -336,33 +326,33 @@ class GameControllerActivity : ComponentActivity(), SensorEventListener {
         buildButtons()
     }
 
-    private fun sendKeyDown(key:String){
-        if(activeKeys.add(key)) ConnectionManager.send("KEY_DOWN:$key")
+    private fun sendKeyDown(key: String) {
+        if (activeKeys.add(key)) ConnectionManager.send("KEY_DOWN:$key")
     }
 
-    private fun sendKeyUp(key:String){
-        if(activeKeys.remove(key)) ConnectionManager.send("KEY_UP:$key")
+    private fun sendKeyUp(key: String) {
+        if (activeKeys.remove(key)) ConnectionManager.send("KEY_UP:$key")
     }
 
-    private fun saveConfigs(){
-        val prefs = getSharedPreferences("controller_layout",MODE_PRIVATE)
+    private fun saveConfigs() {
+        val prefs = getSharedPreferences("controller_layout", MODE_PRIVATE)
         val e = prefs.edit()
-        configs.forEach{
-            e.putFloat("${it.key}_x",it.x)
-            e.putFloat("${it.key}_y",it.y)
-            e.putFloat("${it.key}_size",it.size)
+        configs.forEach {
+            e.putFloat("${it.key}_x", it.x)
+            e.putFloat("${it.key}_y", it.y)
+            e.putFloat("${it.key}_size", it.size)
         }
         e.apply()
     }
 
-    private fun loadConfigs(){
+    private fun loadConfigs() {
         configs.clear()
-        defaultConfigs.forEach{ configs.add(it.copy()) }
-        val prefs = getSharedPreferences("controller_layout",MODE_PRIVATE)
-        configs.forEach{
-            it.x = prefs.getFloat("${it.key}_x",it.x)
-            it.y = prefs.getFloat("${it.key}_y",it.y)
-            it.size = prefs.getFloat("${it.key}_size",it.size)
+        defaultConfigs.forEach { configs.add(it.copy()) }
+        val prefs = getSharedPreferences("controller_layout", MODE_PRIVATE)
+        configs.forEach {
+            it.x = prefs.getFloat("${it.key}_x", it.x)
+            it.y = prefs.getFloat("${it.key}_y", it.y)
+            it.size = prefs.getFloat("${it.key}_size", it.size)
         }
     }
 
