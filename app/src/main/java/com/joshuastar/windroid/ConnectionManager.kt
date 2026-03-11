@@ -23,8 +23,9 @@ object ConnectionManager {
     private var writer: PrintWriter? = null
     private var running = false
     private var appContext: Context? = null
+    private val writeLock = Object()
     @Volatile
-    var ignoreNextClipboard = false
+    var lastReceivedFromPcTime = 0L
 
     fun isConnected(): Boolean {
         return socket?.isConnected == true &&
@@ -62,29 +63,77 @@ object ConnectionManager {
                     FileDropZone.start(appContext!!)
 
                     val reader = socket!!.getInputStream().bufferedReader()
-                    while (running) {
-                        val line = reader.readLine() ?: break
-                        try {
+                    var lastPingTime = System.currentTimeMillis()
+                    var lastLineTime = System.currentTimeMillis()
 
+// Watchdog thread — detects if read loop is frozen
+                    val watchdogThread = Thread {
+                        while (running && socket?.isClosed == false) {
+                            Thread.sleep(3000)
+                            val silentMs = System.currentTimeMillis() - lastLineTime
+                            Log.d(TAG, "Watchdog: last activity ${silentMs}ms ago, connected=${isConnected()}")
+                            if (silentMs > 15000) {
+                                Log.e(TAG, "Watchdog: no activity for 15s — forcing reconnect")
+                                try { socket?.close() } catch (e: Exception) {}
+                                break
+                            }
+                        }
+                    }
+                    watchdogThread.isDaemon = true
+                    watchdogThread.start()
+
+                    while (running) {
+                        val line = try {
+                            reader.readLine()
+                        } catch (e: Exception) {
+                            Log.e(TAG, "readLine exception: ${e.message}")
+                            break
+                        }
+
+                        if (line == null) {
+                            Log.e(TAG, "readLine returned null — server closed connection")
+                            break
+                        }
+
+                        lastLineTime = System.currentTimeMillis()
+                        Log.d(TAG, "<<< RECEIVED: $line")
+
+                        if (line == "PONG") {
+                            Log.d(TAG, "Heartbeat PONG received")
+                            lastPingTime = System.currentTimeMillis()
+                            continue
+                        }
+
+                        if (System.currentTimeMillis() - lastPingTime > 5000) {
+                            lastPingTime = System.currentTimeMillis()
+                            send("PING")
+                            Log.d(TAG, ">>> PING sent")
+                        }
+
+                        try {
                             FileAccessManager.handleCommand(line)
 
                             if (line.startsWith("CMD:")) {
+                                Log.d(TAG, "Dispatching command: ${line.substring(4)}")
                                 handleCommand(line.substring(4))
 
                             } else if (line.startsWith("CLIPBOARD=")) {
                                 val text = line.removePrefix("CLIPBOARD=")
-                                val ctx = appContext ?: continue
-
-                                Log.d(TAG, "Clipboard received from PC: $text")
-
-                                ignoreNextClipboard = true
-
+                                val ctx = appContext
+                                if (ctx == null) {
+                                    Log.e(TAG, "appContext is null — cannot set clipboard")
+                                } else {
+                                Log.d(TAG, "Setting clipboard on phone: '${text.take(30)}'")
+                                lastReceivedFromPcTime = System.currentTimeMillis()
+                                Log.d(TAG, "lastReceivedFromPcTime set to $lastReceivedFromPcTime")
                                 val clipboard = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                                 clipboard.setPrimaryClip(ClipData.newPlainText("windroid", text))
+                                Log.d(TAG, "Clipboard set OK — read loop should continue normally")
 
-                            } else if (line.startsWith("MEDIA=")) {
+                            } }else if (line.startsWith("MEDIA=")) {
                                 val json = line.removePrefix("MEDIA=")
                                 val ctx = appContext ?: continue
+                                Log.d(TAG, "MEDIA update received")
                                 android.os.Handler(android.os.Looper.getMainLooper()).post {
                                     if (MediaNotificationManager.mediaSession == null) {
                                         MediaNotificationManager.init(ctx)
@@ -95,16 +144,20 @@ object ConnectionManager {
                             } else if (line.startsWith("PC_NAME=")) {
                                 val name = line.removePrefix("PC_NAME=")
                                 val ctx = appContext ?: continue
+                                Log.d(TAG, "PC name received: $name")
                                 ctx.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
                                     .edit()
                                     .putString("pc_name", name)
                                     .apply()
+                            } else {
+                                Log.d(TAG, "Unhandled line: $line")
                             }
 
                         } catch (e: Exception) {
-                            Log.e(TAG, "Error processing message: $line", e)
+                            Log.e(TAG, "Exception processing '$line': ${e.message}", e)
                         }
                     }
+                    Log.e(TAG, "Read loop exited — will reconnect")
                 } catch (e: Exception) {
                     Log.e(TAG, "Connection lost: ${e.message}")
                     writer = null
@@ -126,31 +179,32 @@ object ConnectionManager {
         writer = null
         appContext = null
     }
+    // WITH THIS:
     fun send(message: String) {
+        val w = writer
+        if (w == null) {
+            Log.w(TAG, "Send skipped (not connected): $message")
+            return
+        }
+
         Thread {
-            synchronized(this) {
-                try {
-
-                    if (!isConnected()) {
-                        Log.w(TAG, "Send skipped (not connected): $message")
-                        return@synchronized
-                    }
-
-                    writer?.println(message)
-
-                    val error = writer?.checkError() == true
-                    if (error) {
-                        Log.e(TAG, "Writer error detected — closing socket")
-                        socket?.close()
-                        socket = null
-                        writer = null
-                    } else {
-                        Log.d(TAG, "Sent: $message")
-                    }
-
-                } catch (e: Exception) {
-                    Log.e(TAG, "Send failed", e)
+            try {
+                synchronized(writeLock) {
+                    w.println(message)
+                    w.flush()
                 }
+
+                if (w.checkError()) {
+                    Log.e(TAG, "Writer error on send — marking dead")
+                    socket?.close()
+                    writer = null
+                    socket = null
+                } else {
+                    Log.d(TAG, "Sent: $message")
+                }
+
+            } catch (e: Exception) {
+                Log.e(TAG, "Send failed: ${e.message}")
             }
         }.start()
     }
@@ -251,6 +305,7 @@ object ConnectionManager {
 
         override fun onTaskRemoved(rootIntent: Intent?) {
             super.onTaskRemoved(rootIntent)
+            disconnect()  // clean up old socket
             val restartIntent = Intent(applicationContext, PersistentService::class.java)
             startService(restartIntent)
         }

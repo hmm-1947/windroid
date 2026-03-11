@@ -44,13 +44,16 @@ object ClipboardSender {
 
         Log.d("CLIPBOARD", "Sending: $text")
 
-        if (ConnectionManager.ignoreNextClipboard) {
-            ConnectionManager.ignoreNextClipboard = false
-            Log.d("CLIPBOARD", "Ignored clipboard (came from PC)")
+// With this:
+        val timeSinceReceived = System.currentTimeMillis() - ConnectionManager.lastReceivedFromPcTime
+        if (timeSinceReceived < 2000) {
+            Log.d("CLIPBOARD", "Ignored clipboard (came from PC, ${timeSinceReceived}ms ago)")
             return
         }
 
+        Log.d("CLIPBOARD", "About to send. isConnected=${ConnectionManager.isConnected()}, timeSincePC=${System.currentTimeMillis() - ConnectionManager.lastReceivedFromPcTime}ms")
         ConnectionManager.send("CLIPBOARD=$text")
+        Log.d("CLIPBOARD", "Send call returned")
     }
 }
 
@@ -232,13 +235,13 @@ class ClipboardSyncActivity : Activity() {
 
     private var hasSent = false
 
+    // WITH THIS — just remove the Thread block entirely:
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        // Hide from recents and make truly invisible
         setTaskDescription(ActivityManager.TaskDescription("", null, 0x00000000))
         window.addFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE)
         window.setDimAmount(0f)
+        // No connect here — PersistentService already maintains the connection
 
         Thread {
             val ip = getSharedPreferences(PREF_NAME, MODE_PRIVATE)
