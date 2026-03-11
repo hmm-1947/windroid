@@ -25,12 +25,17 @@ public class ClipboardServer {
         clipboardEnabled = val;
     }
 
+    private static final Object writeLock = new Object();
+
     public static void sendToAndroid(String message) {
-        if (androidWriter != null) {
-            androidWriter.println(message);
-            System.out.println("Sent to Android: " + message);
-        } else {
-            System.err.println("No Android connection");
+        synchronized (writeLock) {
+            if (androidWriter != null) {
+                androidWriter.println(message);
+                androidWriter.flush();
+                System.out.println("Sent to Android: " + message);
+            } else {
+                System.err.println("No Android connection");
+            }
         }
     }
 
@@ -41,15 +46,24 @@ public class ClipboardServer {
                 serverSocket.setReuseAddress(true);
                 System.out.println("Server listening on port " + port);
                 while (true) {
-Socket client = serverSocket.accept();
+                    // REPLACE WITH THIS:
+                    Socket client = serverSocket.accept();
 
-if (androidWriter != null) {
-    System.out.println("Another connection attempted, closing it");
-    client.close();
-    continue;
-}
+                    // WITH THIS:
+                    if (androidWriter != null) {
+                        if (WindowsServer.phoneConnected) {
+                            System.out.println("Already connected — rejecting duplicate");
+                            client.close();
+                            continue;
+                        } else {
+                            // phoneConnected is false — the handleClient finally block already
+                            // cleaned up, just null the writer to be safe
+                            System.out.println("Stale writer found — accepting new connection");
+                            androidWriter = null;
+                        }
+                    }
 
-new Thread(() -> handleClient(client)).start();
+                    new Thread(() -> handleClient(client)).start();
                 }
             } catch (BindException e) {
                 System.err.println("Port already in use!");
@@ -71,7 +85,7 @@ new Thread(() -> handleClient(client)).start();
 
                     if (contents != null && contents.isDataFlavorSupported(DataFlavor.stringFlavor)) {
                         String text = (String) contents.getTransferData(DataFlavor.stringFlavor);
-                        if (text.equals(lastReceivedFromPhone)) {
+                        if (lastReceivedFromPhone != null && text.equals(lastReceivedFromPhone)) {
                             lastReceivedFromPhone = null;
                             lastClipboardText = text;
                             continue;
@@ -96,29 +110,44 @@ new Thread(() -> handleClient(client)).start();
     private static void handleClient(Socket client) {
         String incomingIp = client.getInetAddress().getHostAddress();
         String pairedFingerprint = WindowsServer.getPairedFingerprint();
+        String phoneName;
+        String fingerprint;
+        BufferedReader in;
 
         try {
-            BufferedReader in = new BufferedReader(
-                    new InputStreamReader(client.getInputStream()));
-
+            in = new BufferedReader(new InputStreamReader(client.getInputStream()));
             String hello = in.readLine();
             if (hello == null || !hello.startsWith("HELLO|")) {
                 System.out.println("Unknown client — no handshake");
+                try {
+                    client.close();
+                } catch (Exception ignored) {
+                }
                 return;
             }
-
             String[] helloParts = hello.split("\\|", 3);
-            String phoneName = helloParts.length > 1 ? helloParts[1] : "Unknown";
-            String fingerprint = helloParts.length > 2 ? helloParts[2] : "";
-
+            phoneName = helloParts.length > 1 ? helloParts[1] : "Unknown";
+            fingerprint = helloParts.length > 2 ? helloParts[2] : "";
             if (pairedFingerprint != null && !pairedFingerprint.equals(fingerprint)) {
                 System.out.println("Rejected unknown phone: " + phoneName);
+                try {
+                    client.close();
+                } catch (Exception ignored) {
+                }
                 return;
             }
+        } catch (Exception e) {
+            System.err.println("Handshake failed: " + e.getMessage());
+            try {
+                client.close();
+            } catch (Exception ignored) {
+            }
+            return;
+        }
 
+        try {
             WindowsServer.onPhoneConnected(incomingIp, phoneName, fingerprint);
             androidWriter = new PrintWriter(client.getOutputStream(), true);
-
             String pcName = java.net.InetAddress.getLocalHost().getHostName();
             androidWriter.println("PC_NAME=" + pcName);
             MediaBridgeManager.start();
@@ -126,7 +155,11 @@ new Thread(() -> handleClient(client)).start();
 
             String line;
             while ((line = in.readLine()) != null) {
-
+                System.out.println("[DEBUG] PC received raw line: " + line);
+                if (line.equals("PING")) {
+                    androidWriter.println("PONG");
+                    continue;
+                }
                 System.out.println("Received line: " + line);
 
                 if (line.startsWith("CLIPBOARD=")) {
@@ -134,28 +167,20 @@ new Thread(() -> handleClient(client)).start();
                         String text = line.substring("CLIPBOARD=".length());
                         lastReceivedFromPhone = text;
                         lastClipboardText = text;
-
                         StringSelection selection = new StringSelection(text);
                         Toolkit.getDefaultToolkit().getSystemClipboard().setContents(selection, null);
                         System.out.println("Clipboard set on PC: " + text);
                     }
                 } else if (line.startsWith("NOTIF|")) {
-
                     NotificationServer.handle(line);
-
                 } else if (line.equals("MIRROR_STOPPED")) {
-
                     WindowsServer.onMirrorStopped();
-
                 } else if (line.startsWith("STATUS|")) {
-
                     String[] parts = line.split("\\|");
-
                     int battery = -1;
                     String mode = "UNKNOWN";
                     boolean charging = false;
                     boolean bt = false;
-
                     for (String part : parts) {
                         if (part.startsWith("BATTERY:"))
                             battery = Integer.parseInt(part.substring(8));
@@ -166,39 +191,28 @@ new Thread(() -> handleClient(client)).start();
                         if (part.startsWith("BT:"))
                             bt = Boolean.parseBoolean(part.substring(3));
                     }
-
-                    if (battery == lastBattery &&
-                            mode.equals(lastMode) &&
-                            charging == lastCharging &&
-                            bt == lastBt)
+                    if (battery == lastBattery && mode.equals(lastMode) && charging == lastCharging && bt == lastBt)
                         continue;
-
                     lastBattery = battery;
                     lastMode = mode;
                     lastCharging = charging;
                     lastBt = bt;
-
                     final int b = battery;
                     final String m = mode;
                     final boolean c = charging;
                     final boolean bluetooth = bt;
-
                     SwingUtilities.invokeLater(() -> {
                         if (WindowsServer.batteryLabel != null)
-                            WindowsServer.batteryLabel.setText(
-                                    "Battery: " + b + "%" + (c ? " Charging" : " Not Charging"));
+                            WindowsServer.batteryLabel
+                                    .setText("Battery: " + b + "%" + (c ? " Charging" : " Not Charging"));
                         if (WindowsServer.modeLabel != null)
-                            WindowsServer.modeLabel.setText(
-                                    "Mode: " + m + (bluetooth ? "  |  BT ON" : "  |  BT OFF"));
+                            WindowsServer.modeLabel.setText("Mode: " + m + (bluetooth ? "  |  BT ON" : "  |  BT OFF"));
                     });
-
                 } else if (line.startsWith("MOUSE_MOVE:")) {
-
                     String[] parts = line.substring("MOUSE_MOVE:".length()).split(",");
                     int dx = Integer.parseInt(parts[0]);
                     int dy = Integer.parseInt(parts[1]);
                     MouseController.move(dx, dy);
-
                 } else if (line.equals("MOUSE_CLICK")) {
                     MouseController.click();
                 } else if (line.equals("MOUSE_DOWN")) {
@@ -208,10 +222,8 @@ new Thread(() -> handleClient(client)).start();
                 } else if (line.equals("MOUSE_RIGHT_CLICK")) {
                     MouseController.rightClick();
                 } else if (line.startsWith("MOUSE_SCROLL:")) {
-
                     int amount = Integer.parseInt(line.substring("MOUSE_SCROLL:".length()));
                     MouseController.scroll(amount);
-
                 } else if (line.equals("CMD:LOCK_PC")) {
                     try {
                         Runtime.getRuntime().exec(new String[] { "rundll32.exe", "user32.dll,LockWorkStation" });
@@ -234,24 +246,20 @@ new Thread(() -> handleClient(client)).start();
                     MediaBridgeManager.sendCommand("NEXT");
                 } else if (line.equals("CMD:MEDIA_PREV")) {
                     MediaBridgeManager.sendCommand("PREV");
-
                 } else if (line.startsWith("KEY_DOWN:")) {
                     String key = line.substring("KEY_DOWN:".length());
                     int code = KeyboardController.toKeyCode(key);
                     if (code != -1)
                         KeyboardController.keyDown(code);
-
                 } else if (line.startsWith("KEY_UP:")) {
                     String key = line.substring("KEY_UP:".length());
                     int code = KeyboardController.toKeyCode(key);
                     if (code != -1)
                         KeyboardController.keyUp(code);
-
                 } else if (line.startsWith("GYRO:")) {
                     String[] parts = line.substring("GYRO:".length()).split(",");
                     float dx = Float.parseFloat(parts[0]);
                     float dy = Float.parseFloat(parts[1]);
-
                     if (dy < -2.0f)
                         KeyboardController.keyDown(KeyEvent.VK_W);
                     else
@@ -268,7 +276,6 @@ new Thread(() -> handleClient(client)).start();
                         KeyboardController.keyDown(KeyEvent.VK_D);
                     else
                         KeyboardController.keyUp(KeyEvent.VK_D);
-
                 } else if (line.startsWith("STEER:")) {
                     float steer = Float.parseFloat(line.substring("STEER:".length()));
                     KeyboardController.steer(steer);
@@ -278,7 +285,6 @@ new Thread(() -> handleClient(client)).start();
                     RemoteKeyboard.handle(line);
                 }
 
-                // -------- FILE ACCESS --------
                 if (line.startsWith("FILE_REQ_LIST|") || line.startsWith("FILE_REQ_DOWNLOAD|")
                         || line.equals("FILE_REQ_DRIVES")) {
                     FileAccessHandler.handleMessage(line);
@@ -293,8 +299,7 @@ new Thread(() -> handleClient(client)).start();
                         String[] parts = line.split("\\|", 3);
                         byte[] data = java.util.Base64.getDecoder().decode(parts[2]);
                         java.nio.file.Files.write(
-                                java.nio.file.Paths.get(AndroidFileBrowser.getDownloadPath(), parts[1]),
-                                data);
+                                java.nio.file.Paths.get(AndroidFileBrowser.getDownloadPath(), parts[1]), data);
                         System.out.println("Downloaded from Android: " + parts[1]);
                     } catch (Exception e) {
                         e.printStackTrace();
@@ -302,19 +307,19 @@ new Thread(() -> handleClient(client)).start();
                     continue;
                 }
             }
-
         } catch (Exception e) {
-            // connection dropped
-        }finally {
-    if (client != null && !client.isClosed()) {
-        try { client.close(); } catch (Exception ignored) {}
+            System.err.println("Connection error: " + e.getMessage());
+        } finally {
+            if (!client.isClosed()) {
+                try {
+                    client.close();
+                } catch (Exception ignored) {
+                }
+            }
+            androidWriter = null;
+            MediaBridgeManager.stop();
+            WindowsServer.onPhoneDisconnected();
+        }
     }
 
-    if (androidWriter != null) {
-        androidWriter = null;
-        MediaBridgeManager.stop();
-        WindowsServer.onPhoneDisconnected();
-    }
-}
-    }
 }
