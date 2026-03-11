@@ -15,6 +15,11 @@ public class ClipboardServer {
     private static String lastMode = "";
     private static boolean lastCharging = false;
     private static boolean lastBt = false;
+    private static volatile String lastClipboardText = "";
+
+    // Track the last text we received FROM the phone so the monitor never
+    // echoes it back. This replaces the fragile one-shot ignoreNextClipboard flag.
+    private static volatile String lastReceivedFromPhone = null;
 
     public static void setClipboardEnabled(boolean val) {
         clipboardEnabled = val;
@@ -36,8 +41,15 @@ public class ClipboardServer {
                 serverSocket.setReuseAddress(true);
                 System.out.println("Server listening on port " + port);
                 while (true) {
-                    Socket client = serverSocket.accept();
-                    new Thread(() -> handleClient(client)).start();
+Socket client = serverSocket.accept();
+
+if (androidWriter != null) {
+    System.out.println("Another connection attempted, closing it");
+    client.close();
+    continue;
+}
+
+new Thread(() -> handleClient(client)).start();
                 }
             } catch (BindException e) {
                 System.err.println("Port already in use!");
@@ -47,31 +59,33 @@ public class ClipboardServer {
         }).start();
     }
 
-    private static volatile boolean ignoreNextClipboard = false;
-
     public static void startClipboardMonitor() {
         new Thread(() -> {
-            String lastText = "";
+            String lastSentToPhone = "";
             while (true) {
                 try {
                     Thread.sleep(500);
-
-                    if (ignoreNextClipboard) {
-                        ignoreNextClipboard = false;
-                        continue;
-                    }
 
                     Transferable contents = Toolkit.getDefaultToolkit()
                             .getSystemClipboard().getContents(null);
 
                     if (contents != null && contents.isDataFlavorSupported(DataFlavor.stringFlavor)) {
                         String text = (String) contents.getTransferData(DataFlavor.stringFlavor);
-                        if (!text.equals(lastText)) {
-                            lastText = text;
-                            System.out.println("Clipboard changed, sending to Android: "
-                                    + text.substring(0, Math.min(30, text.length())));
-                            sendToAndroid("CLIPBOARD=" + text);
+                        if (text.equals(lastReceivedFromPhone)) {
+                            lastReceivedFromPhone = null;
+                            lastClipboardText = text;
+                            continue;
                         }
+
+                        if (text.equals(lastClipboardText))
+                            continue;
+
+                        lastClipboardText = text;
+
+                        System.out.println("Clipboard changed, sending to Android: "
+                                + text.substring(0, Math.min(30, text.length())));
+
+                        sendToAndroid("CLIPBOARD=" + text);
                     }
                 } catch (Exception ignored) {
                 }
@@ -109,6 +123,7 @@ public class ClipboardServer {
             androidWriter.println("PC_NAME=" + pcName);
             MediaBridgeManager.start();
             System.out.println("Android persistent connection established from: " + incomingIp);
+
             String line;
             while ((line = in.readLine()) != null) {
 
@@ -117,7 +132,9 @@ public class ClipboardServer {
                 if (line.startsWith("CLIPBOARD=")) {
                     if (clipboardEnabled) {
                         String text = line.substring("CLIPBOARD=".length());
-                        ignoreNextClipboard = true;
+                        lastReceivedFromPhone = text;
+                        lastClipboardText = text;
+
                         StringSelection selection = new StringSelection(text);
                         Toolkit.getDefaultToolkit().getSystemClipboard().setContents(selection, null);
                         System.out.println("Clipboard set on PC: " + text);
@@ -127,7 +144,9 @@ public class ClipboardServer {
                     NotificationServer.handle(line);
 
                 } else if (line.equals("MIRROR_STOPPED")) {
+
                     WindowsServer.onMirrorStopped();
+
                 } else if (line.startsWith("STATUS|")) {
 
                     String[] parts = line.split("\\|");
@@ -138,16 +157,12 @@ public class ClipboardServer {
                     boolean bt = false;
 
                     for (String part : parts) {
-
                         if (part.startsWith("BATTERY:"))
                             battery = Integer.parseInt(part.substring(8));
-
                         if (part.startsWith("MODE:"))
                             mode = part.substring(5);
-
                         if (part.startsWith("CHARGING:"))
                             charging = Boolean.parseBoolean(part.substring(9));
-
                         if (part.startsWith("BT:"))
                             bt = Boolean.parseBoolean(part.substring(3));
                     }
@@ -156,7 +171,7 @@ public class ClipboardServer {
                             mode.equals(lastMode) &&
                             charging == lastCharging &&
                             bt == lastBt)
-                        return;
+                        continue;
 
                     lastBattery = battery;
                     lastMode = mode;
@@ -169,15 +184,14 @@ public class ClipboardServer {
                     final boolean bluetooth = bt;
 
                     SwingUtilities.invokeLater(() -> {
-
                         if (WindowsServer.batteryLabel != null)
                             WindowsServer.batteryLabel.setText(
                                     "Battery: " + b + "%" + (c ? " Charging" : " Not Charging"));
-
                         if (WindowsServer.modeLabel != null)
                             WindowsServer.modeLabel.setText(
                                     "Mode: " + m + (bluetooth ? "  |  BT ON" : "  |  BT OFF"));
                     });
+
                 } else if (line.startsWith("MOUSE_MOVE:")) {
 
                     String[] parts = line.substring("MOUSE_MOVE:".length()).split(",");
@@ -186,57 +200,38 @@ public class ClipboardServer {
                     MouseController.move(dx, dy);
 
                 } else if (line.equals("MOUSE_CLICK")) {
-
                     MouseController.click();
-
                 } else if (line.equals("MOUSE_DOWN")) {
-
                     MouseController.mouseDown();
-
                 } else if (line.equals("MOUSE_UP")) {
-
                     MouseController.mouseUp();
-
                 } else if (line.equals("MOUSE_RIGHT_CLICK")) {
-
                     MouseController.rightClick();
-
                 } else if (line.startsWith("MOUSE_SCROLL:")) {
 
                     int amount = Integer.parseInt(line.substring("MOUSE_SCROLL:".length()));
                     MouseController.scroll(amount);
 
                 } else if (line.equals("CMD:LOCK_PC")) {
-
                     try {
-                        Runtime.getRuntime().exec(new String[] {
-                                "rundll32.exe", "user32.dll,LockWorkStation"
-                        });
+                        Runtime.getRuntime().exec(new String[] { "rundll32.exe", "user32.dll,LockWorkStation" });
                         System.out.println("PC locked by phone");
                     } catch (Exception e) {
                         System.err.println("Failed to lock PC: " + e.getMessage());
                     }
-
                 } else if (line.equals("CMD:SIGNOUT_PC")) {
-
                     try {
-                        Runtime.getRuntime().exec(new String[] {
-                                "cmd.exe", "/c", "shutdown", "/l"
-                        });
+                        Runtime.getRuntime().exec(new String[] { "cmd.exe", "/c", "shutdown", "/l" });
                         System.out.println("PC sign-out triggered by phone");
                     } catch (Exception e) {
                         System.err.println("Failed to sign out PC: " + e.getMessage());
                     }
-
                 } else if (line.equals("CMD:MEDIA_PLAY")) {
                     MediaBridgeManager.sendCommand("PLAY");
-
                 } else if (line.equals("CMD:MEDIA_PAUSE")) {
                     MediaBridgeManager.sendCommand("PAUSE");
-
                 } else if (line.equals("CMD:MEDIA_NEXT")) {
                     MediaBridgeManager.sendCommand("NEXT");
-
                 } else if (line.equals("CMD:MEDIA_PREV")) {
                     MediaBridgeManager.sendCommand("PREV");
 
@@ -253,31 +248,27 @@ public class ClipboardServer {
                         KeyboardController.keyUp(code);
 
                 } else if (line.startsWith("GYRO:")) {
-                    // GYRO:dx,dy — map tilt to arrow keys or mouse
                     String[] parts = line.substring("GYRO:".length()).split(",");
                     float dx = Float.parseFloat(parts[0]);
                     float dy = Float.parseFloat(parts[1]);
 
-                    // Map tilt to WASD — threshold 2.0
                     if (dy < -2.0f)
                         KeyboardController.keyDown(KeyEvent.VK_W);
                     else
                         KeyboardController.keyUp(KeyEvent.VK_W);
-
                     if (dy > 2.0f)
                         KeyboardController.keyDown(KeyEvent.VK_S);
                     else
                         KeyboardController.keyUp(KeyEvent.VK_S);
-
                     if (dx < -2.0f)
                         KeyboardController.keyDown(KeyEvent.VK_A);
                     else
                         KeyboardController.keyUp(KeyEvent.VK_A);
-
                     if (dx > 2.0f)
                         KeyboardController.keyDown(KeyEvent.VK_D);
                     else
                         KeyboardController.keyUp(KeyEvent.VK_D);
+
                 } else if (line.startsWith("STEER:")) {
                     float steer = Float.parseFloat(line.substring("STEER:".length()));
                     KeyboardController.steer(steer);
@@ -286,6 +277,7 @@ public class ClipboardServer {
                 if (line.startsWith("KEY:")) {
                     RemoteKeyboard.handle(line);
                 }
+
                 // -------- FILE ACCESS --------
                 if (line.startsWith("FILE_REQ_LIST|") || line.startsWith("FILE_REQ_DOWNLOAD|")
                         || line.equals("FILE_REQ_DRIVES")) {
@@ -312,14 +304,17 @@ public class ClipboardServer {
             }
 
         } catch (Exception e) {
-        } finally {
-            androidWriter = null;
-            MediaBridgeManager.stop();
-            WindowsServer.onPhoneDisconnected();
-            try {
-                client.close();
-            } catch (Exception ignored) {
-            }
-        }
+            // connection dropped
+        }finally {
+    if (client != null && !client.isClosed()) {
+        try { client.close(); } catch (Exception ignored) {}
+    }
+
+    if (androidWriter != null) {
+        androidWriter = null;
+        MediaBridgeManager.stop();
+        WindowsServer.onPhoneDisconnected();
+    }
+}
     }
 }
